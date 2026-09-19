@@ -219,6 +219,8 @@ export function apply(ctx: ClientPluginContext): void {
       {
         name: 'settings.plugin.item',
         id: 'dsh-api-key-pool',
+        // Pair with cordis.patch.yml `id` / settings.register namespace — not the npm name.
+        key: 'api-key-pool',
         order: 50,
         label: () => 'API Key Pool',
         inject: () => ({}),
