@@ -273,6 +273,9 @@ npm run build
 
 原始碼在 `src/`，建置輸出在 `lib/`（會一併發佈）。
 
+維護／UI 風格／Settings 掛載說明：  
+[docs/DEVELOPMENT.zh-TW.md](./docs/DEVELOPMENT.zh-TW.md) · [English](./docs/DEVELOPMENT.md)
+
 ---
 
 ## 致謝
