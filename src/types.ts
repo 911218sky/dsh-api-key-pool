@@ -224,6 +224,8 @@ export interface PanelState {
   msg: PanelMessage
   addInputs: Record<string, string>
   newProvName: string
+  /** Provider accordion open state; missing key = collapsed. */
+  expanded: Record<string, boolean>
 }
 
 export interface ClientSlotRegistration {

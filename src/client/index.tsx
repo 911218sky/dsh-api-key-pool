@@ -4,6 +4,7 @@ import {
   type ClientPluginContext,
   type PanelState,
   type PoolViewClient,
+  type KeyState,
 } from '../types.js'
 
 function installStyles(): () => void {
@@ -11,31 +12,47 @@ function installStyles(): () => void {
   css.textContent = `
     .akp-card { font-family: inherit; color: var(--dsw-alias-label-primary, inherit); }
     .akp-desc { margin: 0 0 12px; font-size: 12px; color: var(--dsw-alias-label-secondary, inherit); opacity: .85; }
-    .akp-prov { margin-bottom: 14px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2, #444); border-radius: 8px; background: var(--dsw-alias-bg-layer-1, transparent); }
-    .akp-prov-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-    .akp-prov-name { font-weight: 600; font-size: 13px; color: var(--dsw-alias-label-primary, inherit); }
-    .akp-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; color: var(--dsw-alias-label-secondary, inherit); }
+    .akp-prov {
+      margin-bottom: 8px; border: 1px solid var(--dsw-alias-border-l2, #444); border-radius: 10px;
+      background: var(--dsw-alias-bg-layer-1, transparent); overflow: hidden;
+    }
+    .akp-prov-toggle {
+      width: 100%; display: flex; align-items: center; gap: 10px; text-align: left;
+      padding: 12px 14px; border: none; background: transparent; cursor: pointer;
+      color: inherit; font: inherit;
+    }
+    .akp-prov-toggle:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.12)); }
+    .akp-prov-toggle-main { flex: 1; min-width: 0; }
+    .akp-prov-name { font-weight: 600; font-size: 13px; color: var(--dsw-alias-label-primary, inherit); display: block; }
+    .akp-prov-sub { margin-top: 2px; font-size: 11px; color: var(--dsw-alias-label-secondary, inherit); opacity: .85; }
+    .akp-chevron {
+      flex: none; width: 18px; height: 18px; color: var(--dsw-alias-label-tertiary, #888);
+      transition: transform .15s ease; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .akp-prov.open .akp-chevron { transform: rotate(180deg); }
+    .akp-prov-body { padding: 0 14px 12px; border-top: 1px solid var(--dsw-alias-border-l1, transparent); }
+    .akp-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 12px; color: var(--dsw-alias-label-secondary, inherit); }
     .akp-key-masked { flex: 1; font-family: monospace; font-size: 11px; color: var(--dsw-alias-label-primary, inherit); }
     .akp-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .akp-status.healthy { background: #4caf50; }
     .akp-status.cooling { background: #ff9800; }
     .akp-x { cursor: pointer; opacity: .55; font-size: 10px; padding: 2px 4px; border: none; background: transparent; color: var(--dsw-alias-label-secondary, inherit); }
     .akp-x:hover { opacity: 1; color: var(--dsw-alias-label-primary, inherit); }
-    .akp-field { display: flex; gap: 6px; margin: 4px 0; }
+    .akp-field { display: flex; gap: 6px; margin: 6px 0 4px; }
     .akp-field input, .akp-addprov input {
-      flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px;
+      flex: 1; min-width: 0; padding: 6px 10px; font-size: 12px;
       border: 1px solid var(--dsw-alias-border-l2, #555);
-      border-radius: 4px;
-      background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #111));
+      border-radius: 6px;
+      background: var(--dsw-alias-bg-base, transparent);
       color: var(--dsw-alias-label-primary, inherit);
     }
     .akp-field input::placeholder, .akp-addprov input::placeholder {
       color: var(--dsw-alias-label-tertiary, #888);
     }
     .akp-btn {
-      padding: 4px 10px; font-size: 12px; border-radius: 4px; cursor: pointer;
+      padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;
       border: 1px solid var(--dsw-alias-border-l2, #555);
-      background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-button-elevated-fill, transparent));
+      background: transparent;
       color: var(--dsw-alias-label-primary, inherit);
     }
     .akp-btn:hover:not(:disabled) {
@@ -52,6 +69,7 @@ function installStyles(): () => void {
     .akp-msg.ok { background: color-mix(in srgb, #4caf50 18%, transparent); color: var(--dsw-alias-state-success-primary, #81c784); }
     .akp-msg.err { background: color-mix(in srgb, #f44336 18%, transparent); color: var(--dsw-alias-state-error-primary, #e57373); }
     .akp-addprov { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2, #444); }
+    .akp-empty { font-size: 11px; color: var(--dsw-alias-label-tertiary, #888); margin: 6px 0; }
   `
   document.head.appendChild(css)
   return () => css.remove()
@@ -94,6 +112,22 @@ async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
   return data as T
 }
 
+function summarizePool(
+  keys: string[],
+  states: Record<string, KeyState>,
+  isLlm: boolean,
+): string {
+  const now = Date.now()
+  const cooling = keys.filter((k) => (states[k]?.cooldownUntil || 0) > now).length
+  const parts: string[] = []
+  if (isLlm) parts.push('LLM provider')
+  parts.push(`${keys.length} key${keys.length === 1 ? '' : 's'}`)
+  if (cooling > 0) parts.push(`${cooling} cooling`)
+  else if (keys.length > 0) parts.push('healthy')
+  else parts.push('no keys yet')
+  return parts.join(' · ')
+}
+
 function ApiKeyPoolCard(): React.ReactElement {
   const [state, setState] = useState<PanelState>({
     llmProviders: [],
@@ -102,6 +136,7 @@ function ApiKeyPoolCard(): React.ReactElement {
     msg: null,
     addInputs: {},
     newProvName: '',
+    expanded: {},
   })
 
   const refresh = useCallback(async () => {
@@ -137,6 +172,13 @@ function ApiKeyPoolCard(): React.ReactElement {
     setTimeout(() => setState((s) => ({ ...s, msg: null })), 3000)
   }
 
+  const toggleExpanded = (provider: string): void => {
+    setState((s) => ({
+      ...s,
+      expanded: { ...s.expanded, [provider]: !s.expanded[provider] },
+    }))
+  }
+
   const handleAddKey = async (provider: string): Promise<void> => {
     const key = (state.addInputs[provider] || '').trim()
     if (!key) return
@@ -148,7 +190,11 @@ function ApiKeyPoolCard(): React.ReactElement {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, provider, key }),
       })
-      setState((s) => ({ ...s, addInputs: { ...s.addInputs, [provider]: '' } }))
+      setState((s) => ({
+        ...s,
+        addInputs: { ...s.addInputs, [provider]: '' },
+        expanded: { ...s.expanded, [provider]: true },
+      }))
       showMsg('ok', 'Key added')
       await refresh()
     } catch (err: unknown) {
@@ -165,7 +211,11 @@ function ApiKeyPoolCard(): React.ReactElement {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'addProvider', provider: name, key: '' }),
       })
-      setState((s) => ({ ...s, newProvName: '' }))
+      setState((s) => ({
+        ...s,
+        newProvName: '',
+        expanded: { ...s.expanded, [name]: true },
+      }))
       showMsg('ok', 'Provider added')
       await refresh()
     } catch (err: unknown) {
@@ -206,8 +256,8 @@ function ApiKeyPoolCard(): React.ReactElement {
     <div className="akp-card">
       <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>API Key Pool</h3>
       <p className="akp-desc">
-        Round-robin keys per provider. Failed keys (401/403/429/…) cool down, then the next key is
-        used. Add a provider below if discovery misses it.
+        Round-robin keys per provider. Expand a provider to manage keys. Failed keys cool down
+        automatically.
       </p>
 
       {allProviders.map((name) => {
@@ -215,79 +265,83 @@ function ApiKeyPoolCard(): React.ReactElement {
         const keys = pool?.maskedKeys || []
         const states = pool?.states || {}
         const isLlm = state.llmProviders.includes(name)
+        const open = Boolean(state.expanded[name])
 
         return (
-          <div key={name} className="akp-prov">
-            <div className="akp-prov-head">
-              <div>
+          <div key={name} className={`akp-prov${open ? ' open' : ''}`}>
+            <button
+              type="button"
+              className="akp-prov-toggle"
+              aria-expanded={open}
+              onClick={() => toggleExpanded(name)}
+            >
+              <span className="akp-prov-toggle-main">
                 <span className="akp-prov-name">{name}</span>
-                {isLlm ? (
-                  <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 6 }}>LLM</span>
-                ) : null}
-                {pool ? (
-                  <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 6 }}>
-                    {keys.length} key{keys.length === 1 ? '' : 's'}
-                  </span>
-                ) : null}
-              </div>
-            </div>
+                <span className="akp-prov-sub">{summarizePool(keys, states, isLlm)}</span>
+              </span>
+              <span className="akp-chevron" aria-hidden="true">
+                ▾
+              </span>
+            </button>
 
-            {keys.map((masked, i) => {
-              const st = states[masked] || { failCount: 0, cooldownUntil: 0 }
-              const cooling = st.cooldownUntil > Date.now()
-              return (
-                <div key={`${masked}-${i}`} className="akp-row">
-                  <span className={`akp-status ${cooling ? 'cooling' : 'healthy'}`} />
-                  <span className="akp-key-masked">{masked}</span>
-                  <span style={{ fontSize: 10, opacity: 0.5 }}>
-                    {cooling
-                      ? `cooling until ${new Date(st.cooldownUntil).toLocaleTimeString()}`
-                      : st.failCount > 0
-                        ? `fails ${st.failCount}`
-                        : 'healthy'}
-                  </span>
+            {open ? (
+              <div className="akp-prov-body">
+                {keys.map((masked, i) => {
+                  const st = states[masked] || { failCount: 0, cooldownUntil: 0 }
+                  const cooling = st.cooldownUntil > Date.now()
+                  return (
+                    <div key={`${masked}-${i}`} className="akp-row">
+                      <span className={`akp-status ${cooling ? 'cooling' : 'healthy'}`} />
+                      <span className="akp-key-masked">{masked}</span>
+                      <span style={{ fontSize: 10, opacity: 0.6 }}>
+                        {cooling
+                          ? `cooling until ${new Date(st.cooldownUntil).toLocaleTimeString()}`
+                          : st.failCount > 0
+                            ? `fails ${st.failCount}`
+                            : 'healthy'}
+                      </span>
+                      <button
+                        className="akp-x"
+                        type="button"
+                        onClick={() => void handleRemoveKey(name, i)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )
+                })}
+
+                {keys.length === 0 ? <p className="akp-empty">No keys yet</p> : null}
+
+                <div className="akp-field">
+                  <input
+                    placeholder="Paste API key…"
+                    value={state.addInputs[name] || ''}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      setState((s) => ({
+                        ...s,
+                        addInputs: { ...s.addInputs, [name]: e.target.value },
+                      }))
+                    }
+                    onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+                      if (e.key === 'Enter') void handleAddKey(name)
+                    }}
+                  />
                   <button
-                    className="akp-x"
+                    className="akp-btn primary"
                     type="button"
-                    onClick={() => void handleRemoveKey(name, i)}
+                    onClick={() => void handleAddKey(name)}
+                    disabled={!(state.addInputs[name] || '').trim()}
                   >
-                    ✕
+                    Add
                   </button>
                 </div>
-              )
-            })}
-
-            {keys.length === 0 ? (
-              <p style={{ fontSize: 11, opacity: 0.5 }}>No keys yet</p>
-            ) : null}
-
-            <div className="akp-field">
-              <input
-                placeholder="Paste API key…"
-                value={state.addInputs[name] || ''}
-                onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                  setState((s) => ({
-                    ...s,
-                    addInputs: { ...s.addInputs, [name]: e.target.value },
-                  }))
-                }
-                onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-                  if (e.key === 'Enter') void handleAddKey(name)
-                }}
-              />
-              <button
-                className="akp-btn primary"
-                type="button"
-                onClick={() => void handleAddKey(name)}
-                disabled={!(state.addInputs[name] || '').trim()}
-              >
-                Add
-              </button>
-            </div>
-            {pool ? (
-              <button className="akp-btn" type="button" onClick={() => void handleReset(name)}>
-                Reset cooldown
-              </button>
+                {pool ? (
+                  <button className="akp-btn" type="button" onClick={() => void handleReset(name)}>
+                    Reset cooldown
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
         )
@@ -315,7 +369,7 @@ function ApiKeyPoolCard(): React.ReactElement {
       </div>
 
       {state.msg ? <div className={`akp-msg ${state.msg.type}`}>{state.msg.text}</div> : null}
-      {state.loading ? <p style={{ fontSize: 11, opacity: 0.5 }}>Loading…</p> : null}
+      {state.loading ? <p className="akp-empty">Loading…</p> : null}
     </div>
   )
 }
