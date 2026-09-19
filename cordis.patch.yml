@@ -7,3 +7,5 @@
         defaultCooldownMs: 30000
         maxRetriesPerTurn: 5
         requireAuthForMutations: true
+        # Allow Settings/Models via --trusted-host (not only localhost).
+        enableRemoteHostSettings: true

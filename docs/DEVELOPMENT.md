@@ -80,6 +80,12 @@ Canonical styles live in `installStyles()` inside `src/client/index.tsx`.
 - Validate `apiKeyEnv` with `assertSafeApiKeyEnv`.
 - Listen to `llm/stream` with `{ global: true }` as well as `agent/request`.
 
+### Remote browsers & Models "settings are unavailable"
+
+DSH sets settings persistence to `memory` when `ctx.remote.$host.isLoopback` is false (any non-localhost hostname). `--trusted-host` only opens the `/api` trust fence — it does **not** enable Host settings. Models then fails with `settings are unavailable in this browser`.
+
+This plugin defaults `enableRemoteHostSettings: true`, injecting `__DSH_TRANSPORT__.ownsHost = true` via `webserver/index-inject` so Settings/Models work through a trusted host. Set `enableRemoteHostSettings: false` to keep upstream behaviour. You still need CLI `--trusted-host`.
+
 ---
 
 ## Checklist before shipping
