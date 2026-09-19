@@ -11,10 +11,12 @@ import {
 import {
   asPoolsPostBody,
   asVerifyPostBody,
+  assertSafeApiKeyEnv,
   assertSafePublicBaseURL,
+  classifyVerifyStatus,
   discoverProvidersFromSettings,
   errorMessage,
-  isMutationAllowed,
+  isRequestAuthorized,
   maskKey,
   readJsonBody,
   sendJson,
@@ -26,6 +28,16 @@ export function registerRoutes(
   config: PluginConfig = {},
 ): void {
   const requireAuth = config.requireAuthForMutations !== false
+  if (!requireAuth) {
+    // Loud footgun warning when admin API is open on non-loopback.
+    try {
+      ctx.logger?.warn?.(
+        '[api-key-pool] requireAuthForMutations=false — pool admin routes are open to the network',
+      )
+    } catch {
+      // ignore
+    }
+  }
 
   ctx.effect(
     () =>
@@ -35,6 +47,10 @@ export function registerRoutes(
         handler: async (req, res) => {
           if (req.method !== 'GET') {
             sendJson(res, 405, { error: 'method not allowed' })
+            return
+          }
+          if (requireAuth && !isRequestAuthorized(req)) {
+            sendJson(res, 401, { error: 'unauthorized' })
             return
           }
           sendJson(res, 200, { providers: discoverProvidersFromSettings(ctx) })
@@ -75,6 +91,11 @@ async function handlePools(
   ctx: PluginContextWithEvents,
   requireAuth: boolean,
 ): Promise<void> {
+  if (requireAuth && !isRequestAuthorized(req)) {
+    sendJson(res, 401, { error: 'unauthorized' })
+    return
+  }
+
   if (req.method === 'GET') {
     const pools: Record<string, PoolPublicView | undefined> = {}
     for (const name of manager.pools.keys()) {
@@ -93,11 +114,6 @@ async function handlePools(
     return
   }
 
-  if (requireAuth && !isMutationAllowed(req)) {
-    sendJson(res, 401, { error: 'unauthorized' })
-    return
-  }
-
   const body = asPoolsPostBody(await readJsonBody(req))
   const provider = body.provider ?? ''
   const action = body.action ?? ''
@@ -110,6 +126,14 @@ async function handlePools(
     if (manager.pools.has(provider)) {
       sendJson(res, 409, { error: `provider '${provider}' already exists` })
       return
+    }
+    if (body.apiKeyEnv) {
+      try {
+        assertSafeApiKeyEnv(body.apiKeyEnv)
+      } catch (err: unknown) {
+        sendJson(res, 400, { error: errorMessage(err) })
+        return
+      }
     }
     const pool = manager.ensurePool(provider, body.apiKeyEnv, body.key)
     manager.persist()
@@ -180,7 +204,7 @@ async function handleVerify(
     return
   }
 
-  if (requireAuth && !isMutationAllowed(req)) {
+  if (requireAuth && !isRequestAuthorized(req)) {
     sendJson(res, 401, { error: 'unauthorized' })
     return
   }
@@ -200,7 +224,7 @@ async function handleVerify(
   }
 
   try {
-    assertSafePublicBaseURL(baseURL)
+    await assertSafePublicBaseURL(baseURL)
   } catch (err: unknown) {
     sendJson(res, 400, { error: errorMessage(err) })
     return
@@ -224,7 +248,7 @@ async function handleVerify(
     manager.applyKeyToEnv(provider, key)
 
     let status = 0
-    let errMsg = ''
+    let errClass = ''
     try {
       const r = await fetch(`${baseURL}/models`, {
         method: 'GET',
@@ -232,20 +256,24 @@ async function handleVerify(
           Authorization: `Bearer ${key}`,
           'Content-Type': 'application/json',
         },
+        redirect: 'error',
         signal: AbortSignal.timeout(20_000),
       })
       status = r.status
-      if (!r.ok) errMsg = (await r.text().catch(() => '')).slice(0, 180)
+      // Drain body without returning upstream content (SSRF / info leak).
+      await r.arrayBuffer().catch(() => undefined)
+      errClass = classifyVerifyStatus(status)
     } catch (err: unknown) {
       status = 0
-      errMsg = errorMessage(err).slice(0, 180)
+      const msg = errorMessage(err).toLowerCase()
+      errClass = /redirect/i.test(msg) ? 'redirect_blocked' : 'network'
     }
 
     attempts.push({
       attempt: i + 1,
       key: maskKey(key),
       status,
-      error: errMsg || undefined,
+      error: status >= 200 && status < 300 ? undefined : errClass,
     })
 
     if (status >= 200 && status < 300) {

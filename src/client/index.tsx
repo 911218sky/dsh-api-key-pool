@@ -56,7 +56,20 @@ async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
       ...(opts?.headers || {}),
     },
   })
-  return (await r.json()) as T
+  let data: unknown = {}
+  try {
+    data = await r.json()
+  } catch {
+    data = {}
+  }
+  if (!r.ok) {
+    const err =
+      data && typeof data === 'object' && 'error' in data
+        ? String((data as { error?: unknown }).error || r.statusText)
+        : r.statusText || `HTTP ${r.status}`
+    throw new Error(err || `HTTP ${r.status}`)
+  }
+  return data as T
 }
 
 function ApiKeyPoolCard(): React.ReactElement {
@@ -70,16 +83,27 @@ function ApiKeyPoolCard(): React.ReactElement {
   })
 
   const refresh = useCallback(async () => {
-    const [provRes, poolRes] = await Promise.all([
-      fetchJson<LlmProvidersApiResponse>(`${API_BASE}/llm-providers`),
-      fetchJson<PoolsApiResponse>(`${API_BASE}/pools`),
-    ])
-    setState((s) => ({
-      ...s,
-      llmProviders: provRes.providers ?? [],
-      pools: poolRes.pools ?? {},
-      loading: false,
-    }))
+    try {
+      const [provRes, poolRes] = await Promise.all([
+        fetchJson<LlmProvidersApiResponse>(`${API_BASE}/llm-providers`),
+        fetchJson<PoolsApiResponse>(`${API_BASE}/pools`),
+      ])
+      setState((s) => ({
+        ...s,
+        llmProviders: provRes.providers ?? [],
+        pools: poolRes.pools ?? {},
+        loading: false,
+      }))
+    } catch (err: unknown) {
+      setState((s) => ({
+        ...s,
+        loading: false,
+        msg: {
+          type: 'err',
+          text: err instanceof Error ? err.message : 'Load failed',
+        },
+      }))
+    }
   }, [])
 
   useEffect(() => {
@@ -96,54 +120,62 @@ function ApiKeyPoolCard(): React.ReactElement {
     if (!key) return
 
     const action = state.pools[provider] ? 'add' : 'addProvider'
-    const r = await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, provider, key }),
-    })
-    if (!r.ok) {
-      showMsg('err', r.error || 'Add failed')
-      return
+    try {
+      await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, provider, key }),
+      })
+      setState((s) => ({ ...s, addInputs: { ...s.addInputs, [provider]: '' } }))
+      showMsg('ok', 'Key added')
+      await refresh()
+    } catch (err: unknown) {
+      showMsg('err', err instanceof Error ? err.message : 'Add failed')
     }
-
-    setState((s) => ({ ...s, addInputs: { ...s.addInputs, [provider]: '' } }))
-    showMsg('ok', 'Key added')
-    await refresh()
   }
 
   const handleAddProvider = async (): Promise<void> => {
     const name = state.newProvName.trim()
     if (!name) return
-    const r = await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'addProvider', provider: name, key: '' }),
-    })
-    if (!r.ok) {
-      showMsg('err', r.error || 'Add provider failed')
-      return
+    try {
+      await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'addProvider', provider: name, key: '' }),
+      })
+      setState((s) => ({ ...s, newProvName: '' }))
+      showMsg('ok', 'Provider added')
+      await refresh()
+    } catch (err: unknown) {
+      showMsg('err', err instanceof Error ? err.message : 'Add provider failed')
     }
-    setState((s) => ({ ...s, newProvName: '' }))
-    showMsg('ok', 'Provider added')
-    await refresh()
   }
 
   const handleRemoveKey = async (provider: string, index: number): Promise<void> => {
-    await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'remove', provider, index }),
-    })
-    await refresh()
+    try {
+      await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove', provider, index }),
+      })
+      await refresh()
+    } catch (err: unknown) {
+      showMsg('err', err instanceof Error ? err.message : 'Remove failed')
+    }
   }
 
   const handleReset = async (provider: string): Promise<void> => {
-    await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reset', provider }),
-    })
-    await refresh()
+    try {
+      await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset', provider }),
+      })
+      showMsg('ok', 'Cooldown reset')
+      await refresh()
+    } catch (err: unknown) {
+      showMsg('err', err instanceof Error ? err.message : 'Reset failed')
+    }
   }
 
   const allProviders = [...new Set([...state.llmProviders, ...Object.keys(state.pools)])]

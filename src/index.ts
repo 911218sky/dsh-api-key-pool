@@ -16,13 +16,24 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
   // Register settings namespace so Settings→Plugins can pair the keyed client card.
   // Pool data lives in pool-config.json / REST; empty schema is enough.
   ctx.inject(['settings'], async (sctx) => {
-    // Lazy import avoids a Node require(ESM) race with parallel plugin entry loading.
-    const schemastery = await import('@deepseek-ai/schemastery')
-    const zs = schemastery.default ?? schemastery
-    const scope = sctx.settings.register('api-key-pool', zs.object({}), { base: {} })
-    sctx.effect(() => () => {
-      void scope
-    }, 'api-key-pool: settings namespace')
+    try {
+      // Lazy import avoids a Node require(ESM) race with parallel plugin entry loading.
+      const schemastery = await import('@deepseek-ai/schemastery')
+      const zs = schemastery.default ?? schemastery
+      const scope = sctx.settings.register('api-key-pool', zs.object({}), { base: {} })
+      sctx.effect(() => () => {
+        void scope
+      }, 'api-key-pool: settings namespace')
+      log(ctx, 'info', 'settings namespace api-key-pool registered')
+    } catch (err: unknown) {
+      log(
+        ctx,
+        'error',
+        `settings.register(api-key-pool) failed — Settings card may stay hidden: ${String(
+          err instanceof Error ? err.message : err,
+        )}`,
+      )
+    }
   })
 
   const manager = new KeyPoolManager(ctx, config)
@@ -115,3 +126,9 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
 }
 
 export { maskKey }
+export {
+  assertSafeApiKeyEnv,
+  assertSafePublicBaseURL,
+  isRequestAuthorized,
+  isMutationAllowed,
+} from './util.js'
