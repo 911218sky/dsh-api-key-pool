@@ -4,4 +4,3 @@ pool-config.json
 .bak.*
 .DS_Store
 *.log
-lib/*.map
