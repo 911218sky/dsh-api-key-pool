@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
@@ -12,6 +12,7 @@ import type {
 } from './types.js'
 import { DEFAULT_COOLDOWN_MS } from './types.js'
 import {
+  assertSafeApiKeyEnv,
   discoverProvidersFromSettings,
   ensureStorageDir,
   errorMessage,
@@ -28,7 +29,35 @@ function emptyState(): KeyState {
 }
 
 function defaultApiKeyEnv(provider: string): string {
-  return `${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`
+  const env = `${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`
+  try {
+    assertSafeApiKeyEnv(env)
+    return env
+  } catch {
+    return 'PROVIDER_API_KEY'
+  }
+}
+
+function sanitizeApiKeyEnv(name: string | undefined, provider: string): string {
+  if (name) {
+    try {
+      assertSafeApiKeyEnv(name)
+      return name
+    } catch (err: unknown) {
+      // Fall back rather than abort bootstrap for a bad persisted/config value.
+      void err
+    }
+  }
+  return defaultApiKeyEnv(provider)
+}
+
+function writeSecretFile(path: string, contents: string): void {
+  writeFileSync(path, contents, { encoding: 'utf8', mode: 0o600 })
+  try {
+    chmodSync(path, 0o600)
+  } catch {
+    // ignore chmod failures on exotic FS
+  }
 }
 
 function readPersisted(): PersistedPools {
@@ -38,13 +67,18 @@ function readPersisted(): PersistedPools {
   try {
     if (!existsSync(primary) && existsSync(legacy)) {
       // one-time migrate from node_modules package dir → DSH_HOME/storages
-      mkdirSync(dirname(primary), { recursive: true })
+      mkdirSync(dirname(primary), { recursive: true, mode: 0o700 })
       renameSync(legacy, primary)
+      try {
+        chmodSync(primary, 0o600)
+      } catch {
+        // ignore
+      }
     }
   } catch {
     try {
       if (existsSync(legacy) && !existsSync(primary)) {
-        writeFileSync(primary, readFileSync(legacy, 'utf8'), 'utf8')
+        writeSecretFile(primary, readFileSync(legacy, 'utf8'))
       }
     } catch {
       // ignore migrate failures
@@ -113,7 +147,7 @@ export class KeyPoolManager {
 
     for (const provider of names) {
       const pcfg = merged[provider] || {}
-      const env = pcfg.apiKeyEnv || defaultApiKeyEnv(provider)
+      const env = sanitizeApiKeyEnv(pcfg.apiKeyEnv, provider)
       const fromCfg = Array.isArray(pcfg.keys) ? pcfg.keys.filter(Boolean) : []
       const envValue = process.env[env]
       const fromEnv = envValue && envValue !== 'public' ? [envValue] : []
@@ -145,7 +179,7 @@ export class KeyPoolManager {
       for (const [provider, pool] of this.pools) {
         out.pools![provider] = { apiKeyEnv: pool.env, keys: pool.keys }
       }
-      writeFileSync(poolConfigPath(), JSON.stringify(out, null, 2), 'utf8')
+      writeSecretFile(poolConfigPath(), JSON.stringify(out, null, 2))
     } catch (err: unknown) {
       log(this.ctx, 'warn', `persist failed: ${errorMessage(err)}`)
     }
@@ -295,7 +329,7 @@ export class KeyPoolManager {
   ensurePool(provider: string, apiKeyEnv?: string, firstKey?: string): PoolRuntime {
     let pool = this.pools.get(provider)
     if (!pool) {
-      const env = apiKeyEnv || defaultApiKeyEnv(provider)
+      const env = sanitizeApiKeyEnv(apiKeyEnv, provider)
       const keys = firstKey ? [firstKey] : []
       pool = {
         env,
@@ -305,8 +339,8 @@ export class KeyPoolManager {
         states: new Map(keys.map((k) => [k, emptyState()])),
       }
       this.pools.set(provider, pool)
-    } else if (apiKeyEnv && !pool.env) {
-      pool.env = apiKeyEnv
+    } else if (apiKeyEnv) {
+      pool.env = sanitizeApiKeyEnv(apiKeyEnv, provider)
     }
     return pool
   }
