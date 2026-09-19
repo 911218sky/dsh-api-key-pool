@@ -1,22 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { API_BASE } from '../types.js'
-
-type Msg = { type: 'ok' | 'err'; text: string } | null
-
-type PoolView = {
-  apiKeyEnv: string
-  maskedKeys: string[]
-  keyCount: number
-  states: Record<string, { failCount: number; cooldownUntil: number }>
-}
-
-type PanelState = {
-  llmProviders: string[]
-  pools: Record<string, PoolView>
-  loading: boolean
-  msg: Msg
-  addInputs: Record<string, string>
-}
+import React, { useCallback, useEffect, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import {
+  API_BASE,
+  type ClientPluginContext,
+  type PanelState,
+  type PoolViewClient,
+} from '../types.js'
 
 function installStyles(): () => void {
   const css = document.createElement('style')
@@ -45,12 +33,25 @@ function installStyles(): () => void {
   return () => css.remove()
 }
 
-async function fetchJson(url: string, opts?: RequestInit): Promise<any> {
-  const r = await fetch(url, opts)
-  return r.json()
+interface LlmProvidersApiResponse {
+  providers?: string[]
 }
 
-function ApiKeyPoolCard() {
+interface PoolsApiResponse {
+  pools?: Record<string, PoolViewClient>
+}
+
+interface MutateApiResponse {
+  ok?: boolean
+  error?: string
+}
+
+async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
+  const r = await fetch(url, opts)
+  return (await r.json()) as T
+}
+
+function ApiKeyPoolCard(): React.ReactElement {
   const [state, setState] = useState<PanelState>({
     llmProviders: [],
     pools: {},
@@ -61,13 +62,13 @@ function ApiKeyPoolCard() {
 
   const refresh = useCallback(async () => {
     const [provRes, poolRes] = await Promise.all([
-      fetchJson(`${API_BASE}/llm-providers`),
-      fetchJson(`${API_BASE}/pools`),
+      fetchJson<LlmProvidersApiResponse>(`${API_BASE}/llm-providers`),
+      fetchJson<PoolsApiResponse>(`${API_BASE}/pools`),
     ])
     setState((s) => ({
       ...s,
-      llmProviders: provRes.providers || [],
-      pools: poolRes.pools || {},
+      llmProviders: provRes.providers ?? [],
+      pools: poolRes.pools ?? {},
       loading: false,
     }))
   }, [])
@@ -76,35 +77,24 @@ function ApiKeyPoolCard() {
     void refresh()
   }, [refresh])
 
-  const showMsg = (type: 'ok' | 'err', text: string) => {
+  const showMsg = (type: 'ok' | 'err', text: string): void => {
     setState((s) => ({ ...s, msg: { type, text } }))
     setTimeout(() => setState((s) => ({ ...s, msg: null })), 3000)
   }
 
-  const handleAddKey = async (provider: string) => {
+  const handleAddKey = async (provider: string): Promise<void> => {
     const key = (state.addInputs[provider] || '').trim()
     if (!key) return
 
-    if (!state.pools[provider]) {
-      const r = await fetchJson(`${API_BASE}/pools`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'addProvider', provider, key }),
-      })
-      if (!r.ok) {
-        showMsg('err', r.error || 'Add failed')
-        return
-      }
-    } else {
-      const r = await fetchJson(`${API_BASE}/pools`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'add', provider, key }),
-      })
-      if (!r.ok) {
-        showMsg('err', r.error || 'Add failed')
-        return
-      }
+    const action = state.pools[provider] ? 'add' : 'addProvider'
+    const r = await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, provider, key }),
+    })
+    if (!r.ok) {
+      showMsg('err', r.error || 'Add failed')
+      return
     }
 
     setState((s) => ({ ...s, addInputs: { ...s.addInputs, [provider]: '' } }))
@@ -112,8 +102,8 @@ function ApiKeyPoolCard() {
     await refresh()
   }
 
-  const handleRemoveKey = async (provider: string, index: number) => {
-    await fetchJson(`${API_BASE}/pools`, {
+  const handleRemoveKey = async (provider: string, index: number): Promise<void> => {
+    await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'remove', provider, index }),
@@ -121,8 +111,8 @@ function ApiKeyPoolCard() {
     await refresh()
   }
 
-  const handleReset = async (provider: string) => {
-    await fetchJson(`${API_BASE}/pools`, {
+  const handleReset = async (provider: string): Promise<void> => {
+    await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reset', provider }),
@@ -136,7 +126,8 @@ function ApiKeyPoolCard() {
     <div className="akp-card">
       <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>API Key Pool</h3>
       <p className="akp-desc">
-        Round-robin keys per provider. Failed keys (401/403/429/…) cool down, then the next key is used.
+        Round-robin keys per provider. Failed keys (401/403/429/…) cool down, then the next key is
+        used.
       </p>
 
       {allProviders.map((name) => {
@@ -170,7 +161,11 @@ function ApiKeyPoolCard() {
                         ? `fails ${st.failCount}`
                         : 'healthy'}
                   </span>
-                  <button className="akp-x" type="button" onClick={() => void handleRemoveKey(name, i)}>
+                  <button
+                    className="akp-x"
+                    type="button"
+                    onClick={() => void handleRemoveKey(name, i)}
+                  >
                     ✕
                   </button>
                 </div>
@@ -185,13 +180,13 @@ function ApiKeyPoolCard() {
               <input
                 placeholder="Paste API key…"
                 value={state.addInputs[name] || ''}
-                onChange={(e) =>
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
                   setState((s) => ({
                     ...s,
                     addInputs: { ...s.addInputs, [name]: e.target.value },
                   }))
                 }
-                onKeyDown={(e) => {
+                onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
                   if (e.key === 'Enter') void handleAddKey(name)
                 }}
               />
@@ -217,9 +212,9 @@ function ApiKeyPoolCard() {
   )
 }
 
-export function apply(ctx: any): void {
+export function apply(ctx: ClientPluginContext): void {
   ctx.effect(installStyles, 'dsh-api-key-pool: styles')
-  ctx.slots.inject('settings.plugin.item', function* (this: void) {
+  ctx.slots.inject('settings.plugin.item', function* () {
     yield ctx.slots.register(
       {
         name: 'settings.plugin.item',
@@ -233,4 +228,4 @@ export function apply(ctx: any): void {
   })
 }
 
-export const inject = ['settingsScope', 'slots']
+export const inject = ['settingsScope', 'slots'] as const

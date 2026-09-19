@@ -5,3 +5,5 @@
       config:
         pools: {}
         defaultCooldownMs: 30000
+        maxRetriesPerTurn: 5
+        requireAuthForMutations: true

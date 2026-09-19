@@ -1,10 +1,32 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { KeyPoolManager } from './pool.js'
-import { API_BASE, DEFAULT_COOLDOWN_MS } from './types.js'
-import type { PluginContext } from './types.js'
-import { discoverProvidersFromSettings, maskKey, readJsonBody, sendJson } from './util.js'
+import {
+  API_BASE,
+  DEFAULT_COOLDOWN_MS,
+  type PluginConfig,
+  type PluginContextWithEvents,
+  type PoolPublicView,
+  type VerifyAttempt,
+} from './types.js'
+import {
+  asPoolsPostBody,
+  asVerifyPostBody,
+  assertSafePublicBaseURL,
+  discoverProvidersFromSettings,
+  errorMessage,
+  isMutationAllowed,
+  maskKey,
+  readJsonBody,
+  sendJson,
+} from './util.js'
 
-export function registerRoutes(ctx: PluginContext, manager: KeyPoolManager): void {
+export function registerRoutes(
+  ctx: PluginContextWithEvents,
+  manager: KeyPoolManager,
+  config: PluginConfig = {},
+): void {
+  const requireAuth = config.requireAuthForMutations !== false
+
   ctx.effect(
     () =>
       ctx.webServer.register({
@@ -26,7 +48,9 @@ export function registerRoutes(ctx: PluginContext, manager: KeyPoolManager): voi
       ctx.webServer.register({
         kind: 'exact',
         path: `${API_BASE}/pools`,
-        handler: (req, res) => handlePools(req, res, manager, ctx),
+        handler: (req, res) => {
+          void handlePools(req, res, manager, ctx, requireAuth)
+        },
       }),
     'api-key-pool: pools',
   )
@@ -36,7 +60,9 @@ export function registerRoutes(ctx: PluginContext, manager: KeyPoolManager): voi
       ctx.webServer.register({
         kind: 'exact',
         path: `${API_BASE}/verify`,
-        handler: (req, res) => handleVerify(req, res, manager),
+        handler: (req, res) => {
+          void handleVerify(req, res, manager, requireAuth)
+        },
       }),
     'api-key-pool: verify',
   )
@@ -46,10 +72,11 @@ async function handlePools(
   req: IncomingMessage,
   res: ServerResponse,
   manager: KeyPoolManager,
-  ctx: PluginContext,
+  ctx: PluginContextWithEvents,
+  requireAuth: boolean,
 ): Promise<void> {
   if (req.method === 'GET') {
-    const pools: Record<string, ReturnType<KeyPoolManager['publicView']>> = {}
+    const pools: Record<string, PoolPublicView | undefined> = {}
     for (const name of manager.pools.keys()) {
       pools[name] = manager.publicView(name)
     }
@@ -66,9 +93,14 @@ async function handlePools(
     return
   }
 
-  const body = await readJsonBody(req)
-  const provider = String(body.provider || '')
-  const action = String(body.action || '')
+  if (requireAuth && !isMutationAllowed(req)) {
+    sendJson(res, 401, { error: 'unauthorized' })
+    return
+  }
+
+  const body = asPoolsPostBody(await readJsonBody(req))
+  const provider = body.provider ?? ''
+  const action = body.action ?? ''
 
   if (action === 'addProvider') {
     if (!provider) {
@@ -103,14 +135,14 @@ async function handlePools(
   }
 
   if (action === 'add' && body.key) {
-    manager.addKey(provider, String(body.key))
+    manager.addKey(provider, body.key)
     sendJson(res, 200, { ok: true, count: manager.pools.get(provider)!.keys.length })
     return
   }
 
   if (action === 'remove') {
-    const index = Number(body.index)
-    if (!Number.isInteger(index)) {
+    const index = body.index
+    if (index === undefined || !Number.isInteger(index)) {
       sendJson(res, 400, { error: 'index required' })
       return
     }
@@ -123,7 +155,7 @@ async function handlePools(
   }
 
   if (action === 'update' && Array.isArray(body.keys)) {
-    manager.updateKeys(provider, body.keys.map(String))
+    manager.updateKeys(provider, body.keys)
     sendJson(res, 200, { ok: true, count: manager.pools.get(provider)!.keys.length })
     return
   }
@@ -141,16 +173,22 @@ async function handleVerify(
   req: IncomingMessage,
   res: ServerResponse,
   manager: KeyPoolManager,
+  requireAuth: boolean,
 ): Promise<void> {
   if (req.method !== 'POST') {
     sendJson(res, 405, { error: 'method not allowed' })
     return
   }
 
-  const body = await readJsonBody(req)
-  const provider = String(body.provider || '')
-  const baseURL = String(body.baseURL || '').replace(/\/$/, '')
-  const maxAttempts = Math.min(Number(body.maxAttempts) || 4, 8)
+  if (requireAuth && !isMutationAllowed(req)) {
+    sendJson(res, 401, { error: 'unauthorized' })
+    return
+  }
+
+  const body = asVerifyPostBody(await readJsonBody(req))
+  const provider = body.provider ?? ''
+  const baseURL = (body.baseURL ?? '').replace(/\/$/, '')
+  const maxAttempts = Math.min(body.maxAttempts || 4, 8)
 
   if (!provider || !manager.pools.has(provider)) {
     sendJson(res, 404, { error: `no pool for '${provider}'` })
@@ -161,22 +199,26 @@ async function handleVerify(
     return
   }
 
-  manager.resetCooldown(provider)
-  const pool = manager.pools.get(provider)!
-  pool.idx = 0
+  try {
+    assertSafePublicBaseURL(baseURL)
+  } catch (err: unknown) {
+    sendJson(res, 400, { error: errorMessage(err) })
+    return
+  }
 
-  const attempts: Array<{
-    attempt: number
-    key?: string
-    status?: number
-    error?: string
-  }> = []
+  // Snapshot keys for probe so we do not permanently scramble live cooldown/idx
+  // beyond marking failures that are still useful signal.
+  const savedIdx = manager.pools.get(provider)!.idx
+  manager.resetCooldown(provider)
+  manager.pools.get(provider)!.idx = 0
+
+  const attempts: VerifyAttempt[] = []
   let ok = false
 
   for (let i = 0; i < maxAttempts; i++) {
     const key = manager.pickKey(provider)
     if (!key) {
-      attempts.push({ attempt: i + 1, error: 'no key' })
+      attempts.push({ attempt: i + 1, error: 'no healthy key' })
       break
     }
     manager.applyKeyToEnv(provider, key)
@@ -194,9 +236,9 @@ async function handleVerify(
       })
       status = r.status
       if (!r.ok) errMsg = (await r.text().catch(() => '')).slice(0, 180)
-    } catch (e: any) {
+    } catch (err: unknown) {
       status = 0
-      errMsg = String(e?.message || e).slice(0, 180)
+      errMsg = errorMessage(err).slice(0, 180)
     }
 
     attempts.push({
@@ -213,6 +255,9 @@ async function handleVerify(
     }
     manager.markFailed(provider, key, String(status || 'TRANSPORT'))
   }
+
+  // Restore round-robin cursor; leave cooldown from probe as diagnostic signal.
+  manager.pools.get(provider)!.idx = savedIdx
 
   sendJson(res, 200, {
     ok,

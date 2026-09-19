@@ -107,7 +107,13 @@ curl -s http://127.0.0.1:3080/dsh-api-key-pool/pools | head
 - **✕** 刪除該 Key（依 index；畫面上不會顯示完整密鑰）
 - **Reset cooldown** 清除該 provider 的冷卻狀態
 
-介面新增的 Key 會寫入安裝套件旁的 `pool-config.json`（已 gitignore），重啟後仍在。
+介面新增的 Key 會存到 `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json`（重裝外掛也不會丟）。
+
+### 安全說明
+
+- **POST** `/pools`、`/verify` 需要本機 loopback、DSH 登入 cookie，或 header `x-api-key-pool-token`（對應環境變數 `DSH_API_KEY_POOL_TOKEN`）。僅在可信網路才可設 `requireAuthForMutations: false`。
+- `/verify` 禁止指向私網／本機的 `baseURL`（防 SSRF）。
+- 只有認證／限流／配額／逾時類錯誤才會換 Key，且每輪有重試上限（`maxRetriesPerTurn`，預設 5）。
 
 ---
 
@@ -250,7 +256,9 @@ llm-pi-ai:
 | 好像不會自動換 Key | 失敗類型要像認證／限流／逾時；有些閘道錯誤格式不同 |
 | 還是打到舊帳號 | pool 與 provider 的 `apiKeyEnv` 不一致 |
 | UI 是空的 | 到 設定 → 插件 → **API Key Pool** 新增 Key |
-| 重裝後 Key 不見 | `pool-config.json` 在安裝套件目錄；重裝可能覆寫 — 請先備份或重新加入 |
+| 重裝後 Key 不見 | v0.5+ 存在 `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json`，會自動從舊路徑遷移 |
+| POST 回 401 | 需要 loopback、DSH cookie，或 `x-api-key-pool-token` |
+| verify 拒絕 baseURL | 私網／本機位址會被 SSRF 防護擋下 |
 
 ---
 

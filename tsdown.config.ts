@@ -1,10 +1,10 @@
-import type { UserConfig } from 'tsdown'
+import { defineConfig } from 'tsdown'
 
 const PACKAGE_ID = 'dsh-api-key-pool'
 
 const neverBundle = [/^node:/, /^@deepseek-ai\//, 'react', 'react/jsx-runtime', 'react-dom']
 
-const config: UserConfig = [
+export default defineConfig([
   {
     entry: { index: 'src/index.ts' },
     format: ['esm'],
@@ -36,6 +36,4 @@ const config: UserConfig = [
       intro: 'var module = { exports: {} };\nvar exports = module.exports;',
     },
   },
-]
-
-export default config
+])

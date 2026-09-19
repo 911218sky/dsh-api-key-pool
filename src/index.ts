@@ -1,54 +1,88 @@
 import { KeyPoolManager } from './pool.js'
 import { registerRoutes } from './routes.js'
-import { RETRYABLE_CODES } from './types.js'
-import type { PluginConfig, PluginContext } from './types.js'
-import { isRetryableFailure, log, maskKey } from './util.js'
+import {
+  DEFAULT_MAX_RETRIES_PER_TURN,
+  type AgentRequestErrorPayload,
+  type AgentRequestPayload,
+  type PluginConfig,
+  type PluginContextWithEvents,
+} from './types.js'
+import { isRetryableFailure, log, maskKey, turnIdFromPayload } from './util.js'
 
 export const name = 'api-key-pool'
-export const inject = ['llm', 'webServer']
+export const inject = ['llm', 'webServer'] as const
 
-export function apply(ctx: PluginContext, config: PluginConfig = {}): void {
+export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): void {
   const manager = new KeyPoolManager(ctx, config)
+  const maxRetries = config.maxRetriesPerTurn ?? DEFAULT_MAX_RETRIES_PER_TURN
+  const turnRetries = new Map<string, number>()
 
-  ctx.on('agent/request', async (_payload: unknown, next: () => Promise<any>) => {
+  ctx.on('agent/request', async (payload: AgentRequestPayload, next) => {
     const call = await next()
-    const provider = call?.provider as string | undefined
+    const provider = call.provider
     if (!provider) return call
+
+    const turnId = turnIdFromPayload(payload)
+    const retriesSoFar = turnRetries.get(turnId) || 0
+    const isRetry = retriesSoFar > 0
+
+    if (!isRetry) {
+      // Previous turn's key for this provider likely succeeded if we start fresh.
+      manager.markPreviousSuccess(provider)
+      manager.clearInflight(provider)
+    }
 
     const key = manager.pickKey(provider)
     if (!key) return call
 
     return manager.withEnvSerial(provider, () => {
       manager.applyKeyToEnv(provider, key)
-      log(ctx, 'info', `injected key ${maskKey(key)} for '${provider}'`)
+      manager.applyKeyToCallConfig(call, key)
+      manager.bindInflight(provider, key)
+      log(
+        ctx,
+        'info',
+        `injected key ${maskKey(key)} for '${provider}'${isRetry ? ` (retry ${retriesSoFar})` : ''}`,
+      )
       return call
     })
   })
 
-  ctx.on('agent/request-error', async (payload: any, next: () => Promise<any>) => {
-    const code = String(payload?.failure?.code || payload?.code || '')
-    const rawMsg = String(payload?.failure?.message || payload?.message || '')
-    const provider = payload?.provider as string | undefined
+  ctx.on('agent/request-error', async (payload: AgentRequestErrorPayload, next) => {
+    const code = String(payload.failure?.code ?? payload.code ?? '')
+    const rawMsg = String(payload.failure?.message ?? payload.message ?? '')
+    const provider = payload.provider
+    const turnId = turnIdFromPayload(payload)
 
-    const retryable =
-      RETRYABLE_CODES.has(code) || isRetryableFailure(code, rawMsg)
-
-    if (provider && retryable) {
-      const pool = manager.pools.get(provider)
-      if (pool) {
-        const currentKey = process.env[pool.env]
-        if (currentKey && pool.keys.includes(currentKey)) {
-          manager.markFailed(provider, currentKey, code)
-          log(ctx, 'info', `key ${maskKey(currentKey)} failed (${code}), retrying with next key...`)
-        }
-      }
-      return { kind: 'retry' }
+    const retryable = isRetryableFailure(code, rawMsg)
+    if (!provider || !retryable) {
+      return next()
     }
 
-    return next()
+    const boundKey = manager.takeInflightKey(provider)
+    if (boundKey) {
+      manager.markFailed(provider, boundKey, code)
+      log(ctx, 'info', `key ${maskKey(boundKey)} failed (${code})`)
+    }
+
+    const used = (turnRetries.get(turnId) || 0) + 1
+    turnRetries.set(turnId, used)
+
+    if (used > maxRetries) {
+      log(ctx, 'warn', `turn ${turnId}: max key retries (${maxRetries}) reached — stop rotating`)
+      return next()
+    }
+
+    if (!manager.hasHealthyKey(provider)) {
+      log(ctx, 'warn', `pool '${provider}': no healthy keys left — stop rotating`)
+      return next()
+    }
+
+    log(ctx, 'info', `retrying '${provider}' with next key (attempt ${used}/${maxRetries})`)
+    return { kind: 'retry' as const }
   })
 
-  registerRoutes(ctx, manager)
+  registerRoutes(ctx, manager, config)
 
   ctx.effect(() => () => manager.dispose(), 'api-key-pool: dispose')
 }

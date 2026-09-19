@@ -107,11 +107,15 @@ UI tips:
 - **✕** removes that key (by index; full secrets are not shown)
 - **Reset cooldown** clears cooling state for that provider
 
-Keys added in the UI are saved to `pool-config.json` next to the installed plugin package (gitignored). They survive restarts.
+Keys added in the UI are saved under `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json` (survives plugin reinstalls).
 
----
+### Security notes
 
-## Configure with YAML (optional)
+- **POST** `/pools` and `/verify` require loopback, a DSH session cookie, or header `x-api-key-pool-token` matching env `DSH_API_KEY_POOL_TOKEN` (disable with `requireAuthForMutations: false` only if trusted).
+- `/verify` rejects private/loopback `baseURL` targets (SSRF protection).
+- Failover only rotates on auth / rate-limit / quota / timeout-style errors, with a per-turn retry cap (`maxRetriesPerTurn`, default 5).
+
+## Develop
 
 You can also seed pools in the plugin’s `cordis.patch.yml` (or your profile `cordis.patch.yml` insert for `api-key-pool`):
 
@@ -250,7 +254,9 @@ Use that same id (`easytokens-gpt`) when calling the API or naming a YAML pool.
 | Rotation never triggers | Failures must look like auth/rate-limit/timeout; some gateways return a different shape |
 | Wrong account / still old key | `apiKeyEnv` mismatch between pool and provider |
 | UI empty | Open Settings → Plugins → **API Key Pool**; create/add keys there |
-| Keys lost after reinstall | `pool-config.json` lives next to the installed package; reinstall may replace that folder — back it up or re-add keys |
+| Keys lost after reinstall | Keys live in `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json` (v0.5+); migrate from the old package-dir file automatically |
+| POST returns 401 | Need loopback, DSH session cookie, or `x-api-key-pool-token` |
+| verify rejects baseURL | Private/loopback hosts are blocked (SSRF guard) |
 
 ---
 
