@@ -1,0 +1,18 @@
+---
+description: DSH Settings UI conventions for this plugin (tokens, settings.section, no Plugins card)
+globs: src/client/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# dsh-api-key-pool — Settings UI
+
+When editing the Web Settings UI:
+
+1. Mount with **`settings.section`** (Settings left nav). Do **not** reintroduce `settings.plugin.item` (Plugins → Plugin configuration).
+2. Match native DSH / Side card look: use only `--dsw-alias-*` tokens; no custom purple/cream themes or inventing a new visual system.
+3. Page structure: intro → optional version badge → group card (`border-radius: 16px`, `bg-layer-3`, hairline borders). Provider rows may accordion inside the group.
+4. Inputs/buttons follow PluginCard field recipe (34px inputs, primary = `label-primary` fill + `bg-layer-3` text).
+5. Nav icon: keep `data-dsh-api-key-pool-settings-nav` + CSS mask if the label stays `API Key Pool` (shell has no icon field yet).
+6. After `src/` changes: `npm run build`, sync profile, hard-refresh Settings.
+
+Full notes: `docs/DEVELOPMENT.zh-TW.md` and `docs/DEVELOPMENT.md`.
