@@ -95,7 +95,7 @@ You should get JSON with a `pools` object (not 404).
 ## Quick start (Web UI)
 
 1. Open the DSH Web UI
-2. Go to **Settings → Plugins → API Key Pool**
+2. Go to **Settings → API Key Pool**
 3. Find your provider name (same id as in Models / `llm-pi-ai`, e.g. `easytokens-gpt`, `dieqiyun-claude`)
 4. Paste an API key → **Add**
 5. Add a second key the same way
@@ -253,7 +253,7 @@ Use that same id (`easytokens-gpt`) when calling the API or naming a YAML pool.
 | Pool exists but chat still uses one key | Only one key in the pool; add a second key |
 | Rotation never triggers | Failures must look like auth/rate-limit/timeout; some gateways return a different shape |
 | Wrong account / still old key | `apiKeyEnv` mismatch between pool and provider |
-| UI empty | Open Settings → Plugins → **API Key Pool**; create/add keys there |
+| UI empty | Open Settings → **API Key Pool**; create/add keys there |
 | Keys lost after reinstall | Keys live in `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json` (v0.5+); migrate from the old package-dir file automatically |
 | POST returns 401 | Need loopback, DSH session cookie, or `x-api-key-pool-token` |
 | verify rejects baseURL | Private/loopback hosts are blocked (SSRF guard) |

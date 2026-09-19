@@ -224,17 +224,14 @@ export interface PanelState {
   msg: PanelMessage
   addInputs: Record<string, string>
   newProvName: string
-  /** Whole card open; default collapsed to keep Settings tidy. */
-  panelOpen: boolean
   /** Provider accordion open state; missing key = collapsed. */
   expanded: Record<string, boolean>
 }
 
+/** `settings.section` registration (Settings sidebar page). */
 export interface ClientSlotRegistration {
   name: string
   id: string
-  /** Must match cordis.patch.yml plugin `id` (e.g. api-key-pool), not the npm package name. */
-  key: string
   order: number
   label: () => string
   inject: () => Record<string, unknown>
