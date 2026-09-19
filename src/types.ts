@@ -24,7 +24,21 @@ export interface PluginConfig {
    * Set false only for trusted private networks.
    */
   requireAuthForMutations?: boolean
+  /**
+   * If true (default), inject `__DSH_TRANSPORT__.ownsHost` so Settings / Models
+   * work when browsing via `--trusted-host` (not only localhost). DSH otherwise
+   * keeps settings in memory-only mode and Models shows
+   * "settings are unavailable in this browser".
+   */
+  enableRemoteHostSettings?: boolean
 }
+
+/** Structured row pushed onto `webserver/index-inject`. */
+export type IndexInjectionRow =
+  | { kind: 'global'; name: string; value: unknown }
+  | { kind: 'script'; placement: 'head' | 'body'; text: string }
+  | { kind: 'html'; placement: 'head' | 'body'; html: string }
+  | { kind: string; [key: string]: unknown }
 
 /** Shape of on-disk `pool-config.json`. */
 export interface PersistedPoolEntry {
@@ -175,6 +189,7 @@ export interface PluginContextWithEvents extends PluginContext {
   on(event: 'agent/request', handler: AgentRequestHandler): void
   on(event: 'agent/request-error', handler: AgentRequestErrorHandler): void
   on(event: 'llm/stream', handler: LlmStreamHandler, options?: EventHandlerOptions): void
+  on(event: 'webserver/index-inject', handler: (table: IndexInjectionRow[]) => void): void
   on(event: string, handler: (...args: unknown[]) => unknown, options?: EventHandlerOptions): void
 }
 

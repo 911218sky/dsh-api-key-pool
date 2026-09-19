@@ -254,6 +254,7 @@ Use that same id (`easytokens-gpt`) when calling the API or naming a YAML pool.
 | Rotation never triggers | Failures must look like auth/rate-limit/timeout; some gateways return a different shape |
 | Wrong account / still old key | `apiKeyEnv` mismatch between pool and provider |
 | UI empty | Open Settings → **API Key Pool**; create/add keys there |
+| Models: settings unavailable in this browser | Remote hostname is not loopback; keep `enableRemoteHostSettings: true` (default) and `--trusted-host`, then hard-refresh |
 | Keys lost after reinstall | Keys live in `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json` (v0.5+); migrate from the old package-dir file automatically |
 | POST returns 401 | Need loopback, DSH session cookie, or `x-api-key-pool-token` |
 | verify rejects baseURL | Private/loopback hosts are blocked (SSRF guard) |

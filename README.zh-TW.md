@@ -256,6 +256,7 @@ llm-pi-ai:
 | 好像不會自動換 Key | 失敗類型要像認證／限流／逾時；有些閘道錯誤格式不同 |
 | 還是打到舊帳號 | pool 與 provider 的 `apiKeyEnv` 不一致 |
 | UI 是空的 | 到 設定 → **API Key Pool** 新增 Key |
+| Models 顯示 settings unavailable in this browser | 外網網域不算 loopback；保持 `enableRemoteHostSettings: true`（預設）與 `--trusted-host`，然後硬重新整理 |
 | 重裝後 Key 不見 | v0.5+ 存在 `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json`，會自動從舊路徑遷移 |
 | POST 回 401 | 需要 loopback、DSH cookie，或 `x-api-key-pool-token` |
 | verify 拒絕 baseURL | 私網／本機位址會被 SSRF 防護擋下 |

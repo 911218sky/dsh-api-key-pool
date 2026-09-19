@@ -13,7 +13,7 @@ export const name = 'api-key-pool'
 export const inject = ['llm', 'webServer', 'settings'] as const
 
 export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): void {
-  // Register settings namespace so Settings→Plugins can pair the keyed client card.
+  // Register settings namespace (pairs with client settings.section / future schema).
   // Pool data lives in pool-config.json / REST; empty schema is enough.
   ctx.inject(['settings'], async (sctx) => {
     try {
@@ -29,12 +29,27 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
       log(
         ctx,
         'error',
-        `settings.register(api-key-pool) failed — Settings card may stay hidden: ${String(
+        `settings.register(api-key-pool) failed — Settings section may stay hidden: ${String(
           err instanceof Error ? err.message : err,
         )}`,
       )
     }
   })
+
+  // DSH treats non-loopback pages as settings-unavailable (memory persistence).
+  // When browsing via --trusted-host, mark the page as owning the host so
+  // Settings → Models can load the provider directory.
+  if (config.enableRemoteHostSettings !== false) {
+    ctx.on('webserver/index-inject', (table) => {
+      table.push({
+        kind: 'script',
+        placement: 'head',
+        // Merge ownsHost without clobbering an existing Electron/custom transport.
+        text: '(function(){var t=globalThis.__DSH_TRANSPORT__;globalThis.__DSH_TRANSPORT__=Object.assign({},t&&typeof t==="object"?t:{},{ownsHost:true});})();',
+      })
+    })
+    log(ctx, 'info', 'remote host settings enabled (__DSH_TRANSPORT__.ownsHost)')
+  }
 
   const manager = new KeyPoolManager(ctx, config)
   const maxRetries = config.maxRetriesPerTurn ?? DEFAULT_MAX_RETRIES_PER_TURN

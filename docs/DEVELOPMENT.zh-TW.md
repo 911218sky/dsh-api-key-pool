@@ -151,6 +151,27 @@ Client `inject`：`['settingsScope', 'slots']`
 - 持久化 `pool-config.json`：權限 `0600`。
 - `llm/stream` 用 `{ global: true }`，避免漏掉非 `agent/request` 路徑。
 
+### 外網連線與 Models「settings are unavailable」
+
+DSH 官方行為：瀏覽器 hostname **不是** loopback 時，`ctx.remote.$host.isLoopback === false`，Settings 只用 memory persistence，Models 頁會失敗並顯示：
+
+`Loading the provider directory failed: settings are unavailable in this browser`
+
+`--trusted-host` 只放行 `/api` 信任圍欄，**不會**自動打開 Host settings。
+
+本外掛預設 `enableRemoteHostSettings: true`：透過 `webserver/index-inject` 注入
+
+`globalThis.__DSH_TRANSPORT__.ownsHost = true`
+
+讓 connection 把頁面視為 ownsHost → isLoopback → Settings 可讀寫 Host。關掉：
+
+```yaml
+config:
+  enableRemoteHostSettings: false
+```
+
+仍需 CLI `--trusted-host your.domain`（或 LAN IP）才能從外網打 `/api`。
+
 ---
 
 ## TypeScript
