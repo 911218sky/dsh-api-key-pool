@@ -224,6 +224,8 @@ export interface PanelState {
   msg: PanelMessage
   addInputs: Record<string, string>
   newProvName: string
+  /** Whole card open; default collapsed to keep Settings tidy. */
+  panelOpen: boolean
   /** Provider accordion open state; missing key = collapsed. */
   expanded: Record<string, boolean>
 }
