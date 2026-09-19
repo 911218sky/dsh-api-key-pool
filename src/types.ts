@@ -123,11 +123,25 @@ export interface WebServerService {
   register: (route: ExactWebRoute) => void | (() => void)
 }
 
+/** Minimal settings service used to expose a Settings→Plugins card namespace. */
+export interface SettingsService {
+  register: (
+    ns: string,
+    schema: unknown,
+    options?: { base?: Record<string, unknown> },
+  ) => unknown
+}
+
 export interface PluginContext {
   logger?: LoggerLike
   effect: (fn: () => void | (() => void), label?: string) => void
   get?: (name: string) => unknown
+  inject: (
+    deps: string[],
+    callback: (scoped: PluginContext & { settings: SettingsService }) => void | Promise<void>,
+  ) => void
   webServer: WebServerService
+  settings?: SettingsService
 }
 
 export interface PluginContextWithEvents extends PluginContext {
@@ -186,6 +200,8 @@ export interface PanelState {
 export interface ClientSlotRegistration {
   name: string
   id: string
+  /** Must match cordis.patch.yml plugin `id` (e.g. api-key-pool), not the npm package name. */
+  key: string
   order: number
   label: () => string
   inject: () => Record<string, unknown>

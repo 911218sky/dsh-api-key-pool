@@ -10,9 +10,21 @@ import {
 import { isRetryableFailure, log, maskKey, turnIdFromPayload } from './util.js'
 
 export const name = 'api-key-pool'
-export const inject = ['llm', 'webServer'] as const
+export const inject = ['llm', 'webServer', 'settings'] as const
 
 export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): void {
+  // Register settings namespace so Settings→Plugins can pair the keyed client card.
+  // Pool data lives in pool-config.json / REST; empty schema is enough.
+  ctx.inject(['settings'], async (sctx) => {
+    // Lazy import avoids a Node require(ESM) race with parallel plugin entry loading.
+    const schemastery = await import('@deepseek-ai/schemastery')
+    const zs = schemastery.default ?? schemastery
+    const scope = sctx.settings.register('api-key-pool', zs.object({}), { base: {} })
+    sctx.effect(() => () => {
+      void scope
+    }, 'api-key-pool: settings namespace')
+  })
+
   const manager = new KeyPoolManager(ctx, config)
   const maxRetries = config.maxRetriesPerTurn ?? DEFAULT_MAX_RETRIES_PER_TURN
   const turnRetries = new Map<string, number>()
