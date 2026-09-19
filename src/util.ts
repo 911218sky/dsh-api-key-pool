@@ -233,7 +233,37 @@ export function extractProvidersFromText(raw: string): string[] {
   return names
 }
 
+function providersFromSettingsDescribe(ctx?: LogContext | null): string[] {
+  try {
+    const settingsSvc = ctx && 'get' in ctx && typeof (ctx as { get?: unknown }).get === 'function'
+      ? (ctx as { get: (name: string) => unknown }).get('settings')
+      : undefined
+    const describe = (settingsSvc as { describe?: (opts?: { redactSecrets?: boolean }) => unknown } | undefined)
+      ?.describe
+    if (typeof describe !== 'function') return []
+
+    const descs = describe.call(settingsSvc, { redactSecrets: true })
+    // Host describe is sync in current DSH; ignore Promise-shaped answers here.
+    if (!Array.isArray(descs)) return []
+    for (const row of descs) {
+      if (!row || typeof row !== 'object') continue
+      const ns = (row as { ns?: unknown }).ns
+      if (String(ns) !== 'llm-pi-ai') continue
+      const providers = (row as { value?: { providers?: unknown } }).value?.providers
+      if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
+        return Object.keys(providers as Record<string, unknown>)
+      }
+    }
+  } catch (err: unknown) {
+    log(ctx, 'warn', `discoverProviders(settings.describe) failed: ${errorMessage(err)}`)
+  }
+  return []
+}
+
 export function discoverProvidersFromSettings(ctx?: LogContext | null): string[] {
+  const fromDescribe = providersFromSettingsDescribe(ctx)
+  if (fromDescribe.length > 0) return fromDescribe
+
   const found = new Set<string>()
   const files = [
     settingsPath(),

@@ -254,7 +254,20 @@ export class KeyPoolManager {
   applyKeyToEnv(provider: string, key: string): void {
     const pool = this.pools.get(provider)
     if (!pool || !key) return
-    process.env[pool.env] = key
+    const envName = pool.env
+    process.env[envName] = key
+    // rc.1+: llm-pi-ai resolves apiKeyEnv via credentials snapshot — process.env
+    // alone is invisible. Persist through credentials.set so rotation takes effect.
+    try {
+      const creds = this.ctx.get?.('credentials') as { set?: (n: string, v: string) => Promise<unknown> | unknown } | undefined
+      if (creds && typeof creds.set === 'function') {
+        void Promise.resolve(creds.set(envName, key)).catch((err: unknown) => {
+          log(this.ctx, 'warn', `credentials.set(${envName}) failed: ${errorMessage(err)}`)
+        })
+      }
+    } catch (err: unknown) {
+      log(this.ctx, 'warn', `credentials write skipped: ${errorMessage(err)}`)
+    }
   }
 
   /**

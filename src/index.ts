@@ -29,6 +29,21 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
   const maxRetries = config.maxRetriesPerTurn ?? DEFAULT_MAX_RETRIES_PER_TURN
   const turnRetries = new Map<string, number>()
 
+  // llm/stream is a global waterfall (third-party plugins often miss scoped agent/request).
+  ctx.on(
+    'llm/stream',
+    (options, next) => {
+      const provider = options?.provider
+      if (!provider) return next()
+      const key = manager.pickKey(provider)
+      if (!key) return next()
+      manager.applyKeyToEnv(provider, key)
+      log(ctx, 'info', `llm/stream: rotated key ${maskKey(key)} for '${provider}'`)
+      return next()
+    },
+    { global: true },
+  )
+
   ctx.on('agent/request', async (payload: AgentRequestPayload, next) => {
     const call = await next()
     const provider = call.provider
