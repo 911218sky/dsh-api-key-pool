@@ -271,6 +271,9 @@ npm run build
 
 Source is under `src/`; build output is `lib/` (published with the package).
 
+Maintainer notes (Settings UI tokens, `settings.section`, Host pitfalls):  
+[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) · [繁中](./docs/DEVELOPMENT.zh-TW.md)
+
 ---
 
 ## Credits
