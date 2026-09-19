@@ -95,7 +95,7 @@ curl -s http://127.0.0.1:3080/dsh-api-key-pool/pools | head
 ## 快速開始（Web UI）
 
 1. 打開 DSH Web UI
-2. 進入 **設定 → 插件 → API Key Pool**
+2. 進入 **設定 → API Key Pool**
 3. 找到 provider 名稱（跟模型設定裡的 id 一樣，例如 `easytokens-gpt`、`dieqiyun-claude`）
 4. 貼上 API Key → 按 **Add**
 5. 再用同樣方式加第二把
@@ -255,7 +255,7 @@ llm-pi-ai:
 | 有 pool 但聊天仍只用一把 | pool 裡其實只有一把 Key；再加第二把 |
 | 好像不會自動換 Key | 失敗類型要像認證／限流／逾時；有些閘道錯誤格式不同 |
 | 還是打到舊帳號 | pool 與 provider 的 `apiKeyEnv` 不一致 |
-| UI 是空的 | 到 設定 → 插件 → **API Key Pool** 新增 Key |
+| UI 是空的 | 到 設定 → **API Key Pool** 新增 Key |
 | 重裝後 Key 不見 | v0.5+ 存在 `$DSH_HOME/storages/dsh-api-key-pool/pool-config.json`，會自動從舊路徑遷移 |
 | POST 回 401 | 需要 loopback、DSH cookie，或 `x-api-key-pool-token` |
 | verify 拒絕 baseURL | 私網／本機位址會被 SSRF 防護擋下 |
