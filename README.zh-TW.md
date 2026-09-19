@@ -125,7 +125,7 @@ curl -s http://127.0.0.1:3080/dsh-api-key-pool/pools | head
 - insert:
     - id: api-key-pool
       name: dsh-api-key-pool
-      inject: [llm, webServer]
+      inject: [llm, webServer, settings]
       config:
         defaultCooldownMs: 30000
         pools:

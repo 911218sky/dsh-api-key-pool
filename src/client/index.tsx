@@ -28,6 +28,8 @@ function installStyles(): () => void {
     .akp-msg { font-size: 11px; margin-top: 6px; padding: 4px 8px; border-radius: 4px; }
     .akp-msg.ok { background: #e8f5e9; color: #2e7d32; }
     .akp-msg.err { background: #ffebee; color: #c62828; }
+    .akp-addprov { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2, #ddd); }
+    .akp-addprov input { flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px; border: 1px solid var(--dsw-alias-border-l2, #ddd); border-radius: 4px; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #333); }
   `
   document.head.appendChild(css)
   return () => css.remove()
@@ -47,7 +49,13 @@ interface MutateApiResponse {
 }
 
 async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
-  const r = await fetch(url, opts)
+  const r = await fetch(url, {
+    credentials: 'include',
+    ...opts,
+    headers: {
+      ...(opts?.headers || {}),
+    },
+  })
   return (await r.json()) as T
 }
 
@@ -58,6 +66,7 @@ function ApiKeyPoolCard(): React.ReactElement {
     loading: true,
     msg: null,
     addInputs: {},
+    newProvName: '',
   })
 
   const refresh = useCallback(async () => {
@@ -102,6 +111,23 @@ function ApiKeyPoolCard(): React.ReactElement {
     await refresh()
   }
 
+  const handleAddProvider = async (): Promise<void> => {
+    const name = state.newProvName.trim()
+    if (!name) return
+    const r = await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'addProvider', provider: name, key: '' }),
+    })
+    if (!r.ok) {
+      showMsg('err', r.error || 'Add provider failed')
+      return
+    }
+    setState((s) => ({ ...s, newProvName: '' }))
+    showMsg('ok', 'Provider added')
+    await refresh()
+  }
+
   const handleRemoveKey = async (provider: string, index: number): Promise<void> => {
     await fetchJson<MutateApiResponse>(`${API_BASE}/pools`, {
       method: 'POST',
@@ -127,7 +153,7 @@ function ApiKeyPoolCard(): React.ReactElement {
       <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>API Key Pool</h3>
       <p className="akp-desc">
         Round-robin keys per provider. Failed keys (401/403/429/…) cool down, then the next key is
-        used.
+        used. Add a provider below if discovery misses it.
       </p>
 
       {allProviders.map((name) => {
@@ -143,6 +169,11 @@ function ApiKeyPoolCard(): React.ReactElement {
                 <span className="akp-prov-name">{name}</span>
                 {isLlm ? (
                   <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 6 }}>LLM</span>
+                ) : null}
+                {pool ? (
+                  <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 6 }}>
+                    {keys.length} key{keys.length === 1 ? '' : 's'}
+                  </span>
                 ) : null}
               </div>
             </div>
@@ -199,12 +230,35 @@ function ApiKeyPoolCard(): React.ReactElement {
                 Add
               </button>
             </div>
-            <button className="akp-btn" type="button" onClick={() => void handleReset(name)}>
-              Reset cooldown
-            </button>
+            {pool ? (
+              <button className="akp-btn" type="button" onClick={() => void handleReset(name)}>
+                Reset cooldown
+              </button>
+            ) : null}
           </div>
         )
       })}
+
+      <div className="akp-addprov">
+        <input
+          placeholder="Provider id (if not listed)…"
+          value={state.newProvName}
+          onChange={(e: ChangeEvent<HTMLInputElement>) =>
+            setState((s) => ({ ...s, newProvName: e.target.value }))
+          }
+          onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+            if (e.key === 'Enter') void handleAddProvider()
+          }}
+        />
+        <button
+          className="akp-btn"
+          type="button"
+          onClick={() => void handleAddProvider()}
+          disabled={!state.newProvName.trim()}
+        >
+          Add provider
+        </button>
+      </div>
 
       {state.msg ? <div className={`akp-msg ${state.msg.type}`}>{state.msg.text}</div> : null}
       {state.loading ? <p style={{ fontSize: 11, opacity: 0.5 }}>Loading…</p> : null}

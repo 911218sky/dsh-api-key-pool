@@ -123,7 +123,7 @@ You can also seed pools in the plugin’s `cordis.patch.yml` (or your profile `c
 - insert:
     - id: api-key-pool
       name: dsh-api-key-pool
-      inject: [llm, webServer]
+      inject: [llm, webServer, settings]
       config:
         defaultCooldownMs: 30000
         pools:

@@ -130,7 +130,34 @@ export interface SettingsService {
     schema: unknown,
     options?: { base?: Record<string, unknown> },
   ) => unknown
+  describe?: (opts?: { redactSecrets?: boolean }) => SettingsDescribeRow[] | Promise<SettingsDescribeRow[]>
 }
+
+export interface SettingsDescribeRow {
+  ns?: string
+  value?: {
+    providers?: Record<string, unknown>
+  }
+}
+
+/** Credentials service used by llm-pi-ai to resolve apiKeyEnv (rc.1+). */
+export interface CredentialsService {
+  set: (envName: string, value: string) => Promise<unknown> | unknown
+}
+
+export interface EventHandlerOptions {
+  global?: boolean
+}
+
+export interface LlmStreamOptions {
+  provider?: string
+  [key: string]: unknown
+}
+
+export type LlmStreamHandler = (
+  options: LlmStreamOptions,
+  next: () => unknown,
+) => unknown
 
 export interface PluginContext {
   logger?: LoggerLike
@@ -147,7 +174,8 @@ export interface PluginContext {
 export interface PluginContextWithEvents extends PluginContext {
   on(event: 'agent/request', handler: AgentRequestHandler): void
   on(event: 'agent/request-error', handler: AgentRequestErrorHandler): void
-  on(event: string, handler: (...args: unknown[]) => unknown): void
+  on(event: 'llm/stream', handler: LlmStreamHandler, options?: EventHandlerOptions): void
+  on(event: string, handler: (...args: unknown[]) => unknown, options?: EventHandlerOptions): void
 }
 
 export type PoolsPostAction =
@@ -195,6 +223,7 @@ export interface PanelState {
   loading: boolean
   msg: PanelMessage
   addInputs: Record<string, string>
+  newProvName: string
 }
 
 export interface ClientSlotRegistration {
