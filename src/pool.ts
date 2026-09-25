@@ -285,22 +285,23 @@ export class KeyPoolManager {
     }
   }
 
-  applyKeyToEnv(provider: string, key: string): void {
+  async applyKeyToEnv(provider: string, key: string): Promise<void> {
     const pool = this.pools.get(provider)
     if (!pool || !key) return
     const envName = pool.env
     process.env[envName] = key
     // rc.1+: llm-pi-ai resolves apiKeyEnv via credentials snapshot — process.env
     // alone is invisible. Persist through credentials.set so rotation takes effect.
+    // Await so the next provider resolve cannot race a stale snapshot.
     try {
-      const creds = this.ctx.get?.('credentials') as { set?: (n: string, v: string) => Promise<unknown> | unknown } | undefined
+      const creds = this.ctx.get?.('credentials') as
+        | { set?: (n: string, v: string) => Promise<unknown> | unknown }
+        | undefined
       if (creds && typeof creds.set === 'function') {
-        void Promise.resolve(creds.set(envName, key)).catch((err: unknown) => {
-          log(this.ctx, 'warn', `credentials.set(${envName}) failed: ${errorMessage(err)}`)
-        })
+        await Promise.resolve(creds.set(envName, key))
       }
     } catch (err: unknown) {
-      log(this.ctx, 'warn', `credentials write skipped: ${errorMessage(err)}`)
+      log(this.ctx, 'warn', `credentials.set(${envName}) failed: ${errorMessage(err)}`)
     }
   }
 

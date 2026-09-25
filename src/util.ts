@@ -498,12 +498,20 @@ export function isRetryableFailure(code: string, message: string): boolean {
   )
 }
 
+/**
+ * Stable turn id for retry budgeting.
+ * DSH 0.1.7+ passes `turn: number`; older payloads used `{ id | turnId }`.
+ */
 export function turnIdFromPayload(payload: {
-  turn?: { id?: string; turnId?: string }
+  turn?: number | string | { id?: string; turnId?: string } | null
 }): string {
   const t = payload.turn
-  if (t?.id) return String(t.id)
-  if (t?.turnId) return String(t.turnId)
+  if (typeof t === 'number' && Number.isFinite(t)) return `turn-${t}`
+  if (typeof t === 'string' && t.length > 0) return t
+  if (t && typeof t === 'object') {
+    if (t.id != null && String(t.id).length > 0) return String(t.id)
+    if (t.turnId != null && String(t.turnId).length > 0) return String(t.turnId)
+  }
   return `anon-${Date.now()}`
 }
 

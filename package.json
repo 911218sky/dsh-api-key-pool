@@ -1,6 +1,6 @@
 {
   "name": "dsh-api-key-pool",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Multi-key round-robin + failover pool for DeepSeek Harness providers.",
   "author": "911218sky",
   "license": "MIT",
@@ -58,7 +58,7 @@
     "typescript": "^5.9.2"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "keywords": [
     "deepseek-harness",
