@@ -462,10 +462,11 @@ export function discoverProvidersFromSettings(ctx?: LogContext | null): string[]
   if (fromDescribe.length > 0) return fromDescribe
 
   const found = new Set<string>()
+  // Prefer profile plugin config over legacy settings.yaml (0.1.7 one-time import).
   const files = [
-    settingsPath(),
     join(dshHome(), 'profiles', 'web', 'cordis.patch.yml'),
     join(dshHome(), 'profiles', 'web', 'cordis.yml'),
+    settingsPath(),
   ]
   for (const file of files) {
     try {
