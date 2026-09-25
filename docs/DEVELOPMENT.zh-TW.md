@@ -66,7 +66,7 @@ ctx.slots.inject('settings.section', function* () {
 
 Host 仍可 `settings.register('api-key-pool', …)`（空 schema 亦可），但 **沒有** `settings.plugin.item` 時，Plugins 設定頁不會再出現這張卡。
 
-Client `inject`：`['settingsScope', 'slots']`  
+Client `inject`：`['configForms', 'slots']`（0.1.7+；0.1.5 為 `settingsScope`）  
 `package.json` → `dsh.client.inject` 需含 `@deepseek-ai/dsh-client-ui-settings`。
 
 ---

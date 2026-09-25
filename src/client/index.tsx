@@ -9,7 +9,7 @@ import {
 
 const SETTINGS_NAV_LABEL = 'API Key Pool'
 const SETTINGS_NAV_MARKER = 'data-dsh-api-key-pool-settings-nav'
-const PLUGIN_VERSION = '0.5.0'
+const PLUGIN_VERSION = '0.5.2'
 
 /** Lucide `key-round` — painted as a currentColor mask on the settings nav row. */
 const NAV_ICON_MASK =
@@ -553,4 +553,4 @@ export function apply(ctx: ClientPluginContext): void {
   })
 }
 
-export const inject = ['settingsScope', 'slots'] as const
+export const inject = ['configForms', 'slots'] as const
