@@ -10,7 +10,7 @@ import {
 import { isRetryableFailure, log, maskKey, turnIdFromPayload } from './util.js'
 
 export const name = 'api-key-pool'
-export const inject = ['llm', 'webServer', 'settings'] as const
+export const inject = ['llm', 'webServer', 'settings', 'credentials'] as const
 
 export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): void {
   // Register settings namespace (pairs with client settings.section / future schema).
@@ -58,12 +58,12 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
   // llm/stream is a global waterfall (third-party plugins often miss scoped agent/request).
   ctx.on(
     'llm/stream',
-    (options, next) => {
+    async (options, next) => {
       const provider = options?.provider
       if (!provider) return next()
       const key = manager.pickKey(provider)
       if (!key) return next()
-      manager.applyKeyToEnv(provider, key)
+      await manager.applyKeyToEnv(provider, key)
       log(ctx, 'info', `llm/stream: rotated key ${maskKey(key)} for '${provider}'`)
       return next()
     },
@@ -88,8 +88,8 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
     const key = manager.pickKey(provider)
     if (!key) return call
 
-    return manager.withEnvSerial(provider, () => {
-      manager.applyKeyToEnv(provider, key)
+    return manager.withEnvSerial(provider, async () => {
+      await manager.applyKeyToEnv(provider, key)
       manager.applyKeyToCallConfig(call, key)
       manager.bindInflight(provider, key)
       log(

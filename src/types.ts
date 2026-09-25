@@ -89,13 +89,16 @@ export interface AgentRequestFailure {
   message?: string
 }
 
+/** Legacy object shape; 0.1.7+ uses a plain number. */
 export interface AgentTurnLike {
   id?: string
   turnId?: string
 }
 
+export type AgentTurnRef = number | string | AgentTurnLike
+
 export interface AgentRequestPayload {
-  turn?: AgentTurnLike
+  turn?: AgentTurnRef
   step?: unknown
   signal?: AbortSignal
 }
@@ -105,7 +108,7 @@ export interface AgentRequestErrorPayload {
   code?: string | number
   message?: string
   failure?: AgentRequestFailure
-  turn?: AgentTurnLike
+  turn?: AgentTurnRef
 }
 
 export type AgentRequestNext = () => Promise<LlmCallConfig>

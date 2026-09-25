@@ -1,7 +1,7 @@
 - insert:
     - id: api-key-pool
       name: dsh-api-key-pool
-      inject: [llm, webServer, settings]
+      inject: [llm, webServer, settings, credentials]
       config:
         pools: {}
         defaultCooldownMs: 30000

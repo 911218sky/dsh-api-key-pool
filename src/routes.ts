@@ -245,7 +245,7 @@ async function handleVerify(
       attempts.push({ attempt: i + 1, error: 'no healthy key' })
       break
     }
-    manager.applyKeyToEnv(provider, key)
+    await manager.applyKeyToEnv(provider, key)
 
     let status = 0
     let errClass = ''
