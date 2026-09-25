@@ -36,7 +36,7 @@ systemctl --user restart dsh-web.service   # or restart your dsh web process
 
 Register with `id`, `order`, `label` only — DSH 0.1.x has **no icon field** on `settings.section`. We mark the nav button with `data-dsh-api-key-pool-settings-nav` and paint a key glyph via CSS mask (same approach as `dsh-better-sidebar`).
 
-Client inject: `['settingsScope', 'slots']`.  
+Client inject: `['configForms', 'slots']` (0.1.7+; was `settingsScope` on 0.1.5).  
 `package.json` → `dsh.client.inject` must include `@deepseek-ai/dsh-client-ui-settings`.
 
 ---
