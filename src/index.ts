@@ -55,17 +55,22 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
   const maxRetries = config.maxRetriesPerTurn ?? DEFAULT_MAX_RETRIES_PER_TURN
   const turnRetries = new Map<string, number>()
 
-  // llm/stream is a global waterfall (third-party plugins often miss scoped agent/request).
+  // llm/stream is a sync Cordis waterfall: the handler MUST return an AsyncIterable,
+  // not a Promise. Downstream (e.g. session-checkpoint-policy) does `yield* next()`;
+  // an async handler yields "is not async iterable" / UI "This turn failed … UNKNOWN".
+  // Await applyKeyToEnv inside the generator, then yield* the rest of the chain.
   ctx.on(
     'llm/stream',
-    async (options, next) => {
+    (options, next) => {
       const provider = options?.provider
       if (!provider) return next()
       const key = manager.pickKey(provider)
       if (!key) return next()
-      await manager.applyKeyToEnv(provider, key)
       log(ctx, 'info', `llm/stream: rotated key ${maskKey(key)} for '${provider}'`)
-      return next()
+      return (async function* () {
+        await manager.applyKeyToEnv(provider, key)
+        yield* next() as AsyncIterable<unknown>
+      })()
     },
     { global: true },
   )
