@@ -10,7 +10,7 @@ import {
 import { isRetryableFailure, log, maskKey, turnIdFromPayload } from './util.js'
 
 export const name = 'api-key-pool'
-export const inject = ['llm', 'webServer', 'credentials'] as const
+export const inject = ['llm', 'webServer', 'settings', 'credentials'] as const
 
 export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): void {
   // DSH 0.2 removed settings.register; pool UI is settings.section on the client.
@@ -63,6 +63,16 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
     const isRetry = retriesSoFar > 0
 
     if (!isRetry) {
+      // Success path never hits request-error give-up — drop stale budgets for
+      // earlier turns of this agent so the map cannot grow without bound.
+      const agentKey =
+        payload.agent?.id != null && String(payload.agent.id).length > 0
+          ? String(payload.agent.id)
+          : 'agent'
+      const prefix = `${agentKey}:`
+      for (const key of turnRetries.keys()) {
+        if (key.startsWith(prefix) && key !== turnId) turnRetries.delete(key)
+      }
       // Previous turn's key for this provider likely succeeded if we start fresh.
       manager.markPreviousSuccess(provider)
       manager.clearInflight(provider)
@@ -105,11 +115,13 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
     turnRetries.set(turnId, used)
 
     if (used > maxRetries) {
+      turnRetries.delete(turnId)
       log(ctx, 'warn', `turn ${turnId}: max key retries (${maxRetries}) reached — stop rotating`)
       return next()
     }
 
     if (!manager.hasHealthyKey(provider)) {
+      turnRetries.delete(turnId)
       log(ctx, 'warn', `pool '${provider}': no healthy keys left — stop rotating`)
       return next()
     }

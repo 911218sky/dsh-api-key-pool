@@ -10,11 +10,12 @@ Internal notes for maintaining Host logic and the Settings UI. End-user docs: [R
 
 | Path | Role |
 |------|------|
-| `src/index.ts` | Host: Cordis apply, events, REST, `settings.register` |
+| `src/index.ts` | Host: Cordis apply, events, REST |
 | `src/pool.ts` | Pool state, persistence, `credentials.set` |
 | `src/routes.ts` | `/dsh-api-key-pool/*` |
-| `src/util.ts` | Auth, SSRF, safe `apiKeyEnv` |
+| `src/util.ts` | Auth, SSRF, safe `apiKeyEnv`, provider discovery |
 | `src/client/index.tsx` | **Settings sidebar section** (not under Plugins) |
+| `src/client/settings-nav-icon.ts` | Settings nav key-icon marker (MutationObserver + CSS mask) |
 | `src/types.ts` | Shared types (no `any`) |
 | `cordis.patch.yml` | Plugin id / inject / config |
 | `lib/` | Build output — **rebuild after every `src/` change** |
@@ -34,7 +35,7 @@ systemctl --user restart dsh-web.service   # or restart your dsh web process
 | `settings.plugin.item` | Plugins → Plugin configuration (`PluginCard`) | ❌ removed |
 | `settings.section` | Settings **left nav** (like Side card) | ✅ current |
 
-Register with `id`, `order`, `label` only — DSH 0.1.x has **no icon field** on `settings.section`. We mark the nav button with `data-dsh-api-key-pool-settings-nav` and paint a key glyph via CSS mask (same approach as `dsh-better-sidebar`).
+Register with `id`, `order`, `label` only — DSH has **no icon field** on `settings.section`. We mark the nav button with `data-dsh-api-key-pool-settings-nav` and paint a key glyph via CSS mask (same approach as `dsh-better-sidebar`). The MutationObserver is scoped to the open settings dialog when present (body fallback otherwise) and debounced; prefer matching `aria-label` when the host sets it. Label text must stay unique until upstream adds a real icon API. Logic lives in `src/client/settings-nav-icon.ts` (covered by vitest).
 
 Client inject: `['configForms', 'slots']` (0.1.7+; was `settingsScope` on 0.1.5).  
 `package.json` → `dsh.client.inject` must include `@deepseek-ai/dsh-client-ui-settings`.
@@ -79,6 +80,10 @@ Canonical styles live in `installStyles()` inside `src/client/index.tsx`.
 - REST auth on by default; keep SSRF checks on `/verify`; `pool-config.json` mode `0600`.
 - Validate `apiKeyEnv` with `assertSafeApiKeyEnv`.
 - Listen to `llm/stream` with `{ global: true }` as well as `agent/request`.
+- Paths: `@deepseek-ai/dsh-home-paths` (`resolveDshHome` / `dshHomePath`), not a hand-rolled `DSH_HOME`.
+- Providers: prefer `ctx.llm.listConfigurableProviders()` / `listProviders()` before YAML fallbacks.
+- Key rotation: `resolveRetryPolicy` defaults + `AUTH` / `QUOTA` / `ACCOUNT_QUOTA` / `INVALID_CREDENTIAL`.
+- Turn retry budget: scope `turnId` by `agent.id`; delete the entry when giving up.
 
 ### Remote browsers & Models "settings are unavailable"
 

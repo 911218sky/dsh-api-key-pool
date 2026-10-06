@@ -14,14 +14,13 @@ import {
   type PoolViewClient,
   type KeyState,
 } from '../types.js'
+import {
+  SETTINGS_NAV_LABEL,
+  installNavIconStyles,
+  registerSettingsNavIcon,
+} from './settings-nav-icon.js'
 
-const SETTINGS_NAV_LABEL = 'API Key Pool'
-const SETTINGS_NAV_MARKER = 'data-dsh-api-key-pool-settings-nav'
-const PLUGIN_VERSION = '0.5.7'
-
-/** Lucide `key-round` — painted as a currentColor mask on the settings nav row. */
-const NAV_ICON_MASK =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5' fill='black'/%3E%3C/svg%3E\")"
+const PLUGIN_VERSION = '0.5.9'
 
 const sectionStyle: React.CSSProperties = {
   display: 'flex',
@@ -43,46 +42,6 @@ const fieldRowStyle: React.CSSProperties = {
   gap: 8,
   alignItems: 'center',
   marginTop: 4,
-}
-
-function installNavIconStyles(): () => void {
-  const css = document.createElement('style')
-  css.textContent = `
-    [${SETTINGS_NAV_MARKER}] > svg:first-child { display: none; }
-    [${SETTINGS_NAV_MARKER}]::before {
-      content: ''; flex: none; width: 16px; height: 16px;
-      background: currentColor;
-      -webkit-mask: ${NAV_ICON_MASK} center / contain no-repeat;
-      mask: ${NAV_ICON_MASK} center / contain no-repeat;
-    }
-  `
-  document.head.appendChild(css)
-  return () => css.remove()
-}
-
-/** Mark our Settings nav row so CSS can swap the fallback gear for a key icon. */
-function registerSettingsNavIcon(label: () => string): () => void {
-  let disposed = false
-  const sync = (): void => {
-    if (disposed) return
-    const currentLabel = label().trim()
-    const buttons = document.querySelectorAll<HTMLButtonElement>('[role="dialog"] nav button')
-    for (const button of buttons) {
-      const matches = currentLabel.length > 0 && button.textContent?.trim() === currentLabel
-      if (matches) button.setAttribute(SETTINGS_NAV_MARKER, '')
-      else button.removeAttribute(SETTINGS_NAV_MARKER)
-    }
-  }
-  sync()
-  const observer = new MutationObserver(sync)
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true })
-  return () => {
-    disposed = true
-    observer.disconnect()
-    document.querySelectorAll(`[${SETTINGS_NAV_MARKER}]`).forEach((el) => {
-      el.removeAttribute(SETTINGS_NAV_MARKER)
-    })
-  }
 }
 
 interface LlmProvidersApiResponse {

@@ -3,26 +3,54 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { LoggerLike, PoolsPostBody, VerifyPostBody } from './types.js'
-import { RETRYABLE_CODES } from './types.js'
+import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import {
+  ACCOUNT_QUOTA_EXCEEDED_CODE,
+  INVALID_CREDENTIAL_CODE,
+  QUOTA_EXCEEDED_CODE,
+  resolveRetryPolicy,
+} from '@deepseek-ai/dsh-llm'
+import type { LlmService, LoggerLike, PoolsPostBody, VerifyPostBody } from './types.js'
+
+/**
+ * Codes that justify rotating to another pooled key.
+ * Start from DSH's default `resolveRetryPolicy` set, then add credential/quota
+ * classes where a different key may succeed (same-key retry would not help).
+ */
+function defaultRetryableCodes(): Set<string> {
+  const policy = resolveRetryPolicy(undefined, 'dsh-api-key-pool')
+  const codes = new Set<string>(
+    policy.mode === 'normal' ? policy.retryableCodes : [],
+  )
+  // Key-pool extras (intentionally outside DSH's same-request retry defaults).
+  codes.add('AUTH')
+  codes.add(QUOTA_EXCEEDED_CODE)
+  codes.add(ACCOUNT_QUOTA_EXCEEDED_CODE)
+  codes.add(INVALID_CREDENTIAL_CODE)
+  return codes
+}
+
+export const RETRYABLE_CODES = defaultRetryableCodes()
+
 
 export interface LogContext {
   logger?: LoggerLike
+  llm?: LlmService
+  get?: (name: string) => unknown
 }
 
 export function dshHome(): string {
-  return process.env.DSH_HOME || join(homedir(), '.dsh')
+  return resolveDshHome()
 }
 
 export function settingsPath(): string {
-  return join(dshHome(), 'settings.yaml')
+  return dshHomePath('settings.yaml')
 }
 
 /** Stable path that survives package reinstalls. */
 export function poolConfigPath(): string {
-  return join(dshHome(), 'storages', 'dsh-api-key-pool', 'pool-config.json')
+  return dshHomePath('storages', 'dsh-api-key-pool', 'pool-config.json')
 }
 
 /** Legacy location next to the installed package (migrate-once source). */
@@ -31,7 +59,7 @@ export function legacyPoolConfigPath(packageRoot: string): string {
 }
 
 export function ensureStorageDir(): void {
-  mkdirSync(join(dshHome(), 'storages', 'dsh-api-key-pool'), { recursive: true, mode: 0o700 })
+  mkdirSync(dshHomePath('storages', 'dsh-api-key-pool'), { recursive: true, mode: 0o700 })
 }
 
 export function maskKey(key: string): string {
@@ -430,11 +458,42 @@ export function extractProvidersFromText(raw: string): string[] {
   return names
 }
 
+function llmServiceOf(ctx?: LogContext | null): LlmService | undefined {
+  if (!ctx) return undefined
+  if (ctx.llm && typeof ctx.llm === 'object') return ctx.llm
+  if (typeof ctx.get === 'function') {
+    const llm = ctx.get('llm')
+    if (llm && typeof llm === 'object') return llm as LlmService
+  }
+  return undefined
+}
+
+/** Prefer official `ctx.llm` registry APIs over parsing YAML / settings blobs. */
+function providersFromLlm(ctx?: LogContext | null): string[] {
+  try {
+    const llm = llmServiceOf(ctx)
+    if (!llm) return []
+    const names = new Set<string>()
+    if (typeof llm.listConfigurableProviders === 'function') {
+      for (const row of llm.listConfigurableProviders()) {
+        if (row?.provider) names.add(row.provider)
+      }
+    }
+    if (typeof llm.listProviders === 'function') {
+      for (const row of llm.listProviders()) {
+        if (row?.id) names.add(row.id)
+      }
+    }
+    return [...names]
+  } catch (err: unknown) {
+    log(ctx, 'warn', `discoverProviders(llm) failed: ${errorMessage(err)}`)
+    return []
+  }
+}
+
 function providersFromSettingsDescribe(ctx?: LogContext | null): string[] {
   try {
-    const settingsSvc = ctx && 'get' in ctx && typeof (ctx as { get?: unknown }).get === 'function'
-      ? (ctx as { get: (name: string) => unknown }).get('settings')
-      : undefined
+    const settingsSvc = typeof ctx?.get === 'function' ? ctx.get('settings') : undefined
     const describe = (settingsSvc as { describe?: (opts?: { redactSecrets?: boolean }) => unknown } | undefined)
       ?.describe
     if (typeof describe !== 'function') return []
@@ -442,15 +501,15 @@ function providersFromSettingsDescribe(ctx?: LogContext | null): string[] {
     const descs = describe.call(settingsSvc, { redactSecrets: true })
     // Host describe is sync in current DSH; ignore Promise-shaped answers here.
     if (!Array.isArray(descs)) return []
+    const names = new Set<string>()
     for (const row of descs) {
       if (!row || typeof row !== 'object') continue
-      const ns = (row as { ns?: unknown }).ns
-      if (String(ns) !== 'llm-pi-ai') continue
       const providers = (row as { value?: { providers?: unknown } }).value?.providers
       if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
-        return Object.keys(providers as Record<string, unknown>)
+        for (const key of Object.keys(providers as Record<string, unknown>)) names.add(key)
       }
     }
+    return [...names]
   } catch (err: unknown) {
     log(ctx, 'warn', `discoverProviders(settings.describe) failed: ${errorMessage(err)}`)
   }
@@ -458,14 +517,17 @@ function providersFromSettingsDescribe(ctx?: LogContext | null): string[] {
 }
 
 export function discoverProvidersFromSettings(ctx?: LogContext | null): string[] {
+  const fromLlm = providersFromLlm(ctx)
+  if (fromLlm.length > 0) return fromLlm
+
   const fromDescribe = providersFromSettingsDescribe(ctx)
   if (fromDescribe.length > 0) return fromDescribe
 
   const found = new Set<string>()
-  // Prefer profile plugin config over legacy settings.yaml (0.1.7 one-time import).
+  // Last resort: profile YAML / legacy settings.yaml (pre-llm-registry compositions).
   const files = [
-    join(dshHome(), 'profiles', 'web', 'cordis.patch.yml'),
-    join(dshHome(), 'profiles', 'web', 'cordis.yml'),
+    dshHomePath('profiles', 'web', 'cordis.patch.yml'),
+    dshHomePath('profiles', 'web', 'cordis.yml'),
     settingsPath(),
   ]
   for (const file of files) {
@@ -500,19 +562,25 @@ export function isRetryableFailure(code: string, message: string): boolean {
 
 /**
  * Stable turn id for retry budgeting.
- * DSH 0.1.7+ passes `turn: number`; older payloads used `{ id | turnId }`.
+ * DSH 0.2 passes `{ agent, turn: number }`; older payloads used `{ id | turnId }`.
+ * Include agent id so concurrent sessions with the same turn number do not share budget.
  */
 export function turnIdFromPayload(payload: {
+  agent?: { id?: string | number } | null
   turn?: number | string | { id?: string; turnId?: string } | null
 }): string {
+  const agentKey =
+    payload.agent?.id != null && String(payload.agent.id).length > 0
+      ? String(payload.agent.id)
+      : 'agent'
   const t = payload.turn
-  if (typeof t === 'number' && Number.isFinite(t)) return `turn-${t}`
-  if (typeof t === 'string' && t.length > 0) return t
+  if (typeof t === 'number' && Number.isFinite(t)) return `${agentKey}:turn-${t}`
+  if (typeof t === 'string' && t.length > 0) return `${agentKey}:${t}`
   if (t && typeof t === 'object') {
-    if (t.id != null && String(t.id).length > 0) return String(t.id)
-    if (t.turnId != null && String(t.turnId).length > 0) return String(t.turnId)
+    if (t.id != null && String(t.id).length > 0) return `${agentKey}:${String(t.id)}`
+    if (t.turnId != null && String(t.turnId).length > 0) return `${agentKey}:${String(t.turnId)}`
   }
-  return `anon-${Date.now()}`
+  return `${agentKey}:anon-${Date.now()}`
 }
 
 /** Stable opaque id for logs (optional helper). */

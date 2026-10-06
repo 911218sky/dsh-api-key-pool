@@ -97,13 +97,20 @@ export interface AgentTurnLike {
 
 export type AgentTurnRef = number | string | AgentTurnLike
 
+/** Minimal agent identity used for per-session retry budgeting. */
+export interface AgentRef {
+  id?: string | number
+}
+
 export interface AgentRequestPayload {
+  agent?: AgentRef | null
   turn?: AgentTurnRef
   step?: unknown
   signal?: AbortSignal
 }
 
 export interface AgentRequestErrorPayload {
+  agent?: AgentRef | null
   provider?: string
   code?: string | number
   message?: string
@@ -140,13 +147,8 @@ export interface WebServerService {
   register: (route: ExactWebRoute) => void | (() => void)
 }
 
-/** Minimal settings service used to expose a Settings→Plugins card namespace. */
+/** Minimal settings service used for provider discovery (`describe`). */
 export interface SettingsService {
-  register: (
-    ns: string,
-    schema: unknown,
-    options?: { base?: Record<string, unknown> },
-  ) => unknown
   describe?: (opts?: { redactSecrets?: boolean }) => SettingsDescribeRow[] | Promise<SettingsDescribeRow[]>
 }
 
@@ -157,9 +159,15 @@ export interface SettingsDescribeRow {
   }
 }
 
-/** Credentials service used by llm-pi-ai to resolve apiKeyEnv (rc.1+). */
+/** Credentials seam used to resolve apiKeyEnv (DSH 0.2+). */
 export interface CredentialsService {
-  set: (envName: string, value: string) => Promise<unknown> | unknown
+  set: (ref: string, value: string) => Promise<unknown> | unknown
+}
+
+/** Minimal llm service surface used for provider discovery. */
+export interface LlmService {
+  listProviders?: () => Array<{ id: string }>
+  listConfigurableProviders?: () => Array<{ provider: string }>
 }
 
 export interface EventHandlerOptions {
@@ -186,6 +194,8 @@ export interface PluginContext {
   ) => void
   webServer: WebServerService
   settings?: SettingsService
+  credentials?: CredentialsService
+  llm?: LlmService
 }
 
 export interface PluginContextWithEvents extends PluginContext {
@@ -268,12 +278,3 @@ export interface ClientPluginContext {
 export const API_BASE = '/dsh-api-key-pool' as const
 export const DEFAULT_COOLDOWN_MS = 30_000
 export const DEFAULT_MAX_RETRIES_PER_TURN = 5
-
-/** Narrow set of pi-ai / transport failure codes that justify key rotation. */
-export const RETRYABLE_CODES = new Set([
-  'RATE_LIMIT',
-  'AUTH',
-  'QUOTA_EXCEEDED',
-  'TIMEOUT',
-  'TRANSPORT',
-])
