@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import React, { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
+import {
+  Button,
+  DisclosureRow,
+  Input,
+  Pill,
+  StateDot,
+  Tag,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   API_BASE,
   type ClientPluginContext,
@@ -9,171 +17,43 @@ import {
 
 const SETTINGS_NAV_LABEL = 'API Key Pool'
 const SETTINGS_NAV_MARKER = 'data-dsh-api-key-pool-settings-nav'
-const PLUGIN_VERSION = '0.5.2'
+const PLUGIN_VERSION = '0.5.7'
 
 /** Lucide `key-round` — painted as a currentColor mask on the settings nav row. */
 const NAV_ICON_MASK =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5' fill='black'/%3E%3C/svg%3E\")"
 
-function installStyles(): () => void {
+const sectionStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 16,
+  width: '100%',
+  maxWidth: 760,
+}
+
+const rowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '4px 0',
+}
+
+const fieldRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
+  marginTop: 4,
+}
+
+function installNavIconStyles(): () => void {
   const css = document.createElement('style')
   css.textContent = `
-    /* Replace shell fallback gear with a key glyph (same trick as better-sidebar). */
     [${SETTINGS_NAV_MARKER}] > svg:first-child { display: none; }
     [${SETTINGS_NAV_MARKER}]::before {
       content: ''; flex: none; width: 16px; height: 16px;
       background: currentColor;
       -webkit-mask: ${NAV_ICON_MASK} center / contain no-repeat;
       mask: ${NAV_ICON_MASK} center / contain no-repeat;
-    }
-
-    .akp-section {
-      display: flex; flex-direction: column; gap: 16px;
-      width: 100%; max-width: 760px;
-      color: var(--dsw-alias-label-primary, inherit);
-      font-family: inherit;
-    }
-    .akp-intro {
-      margin: 0; padding: 0 2px;
-      font-size: 13px; line-height: 20px;
-      color: var(--dsw-alias-label-tertiary, #888);
-    }
-    .akp-badge {
-      display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
-      padding: 4px 12px 4px 14px; border-radius: 999px;
-      border: 1px solid var(--dsw-alias-border-l2, #444);
-      background: var(--dsw-alias-bg-layer-2, transparent);
-      font-size: 12px; line-height: 18px;
-    }
-    .akp-badge-name { color: var(--dsw-alias-label-primary, inherit); font-weight: 600; }
-    .akp-badge-tag {
-      padding: 1px 8px; border-radius: 999px;
-      background: var(--dsw-alias-accent-soft, var(--dsw-alias-border-l2, #444));
-      color: var(--dsw-alias-label-secondary, #aaa);
-      font-variant-numeric: tabular-nums;
-    }
-    .akp-group {
-      display: flex; flex-direction: column; gap: 8px;
-      padding: 20px; box-sizing: border-box;
-      border: 1px solid var(--dsw-alias-border-l2, #444);
-      border-radius: 16px;
-      background: var(--dsw-alias-bg-layer-3, transparent);
-    }
-    .akp-group-heading {
-      display: flex; align-items: baseline; gap: 7px;
-      padding: 0 2px 6px;
-      font-size: 13px; line-height: 20px; font-weight: 600;
-      color: var(--dsw-alias-label-primary, inherit);
-    }
-    .akp-count {
-      padding: 1px 8px; border-radius: 999px;
-      background: var(--dsw-alias-accent-soft, var(--dsw-alias-bg-layer-2, #333));
-      font-size: 11px; line-height: 16px; font-weight: 500;
-      color: var(--dsw-alias-label-secondary, #aaa);
-      font-variant-numeric: tabular-nums;
-    }
-    .akp-prov {
-      border-top: 0.5px solid var(--dsw-alias-border-l2, #444);
-    }
-    .akp-prov:first-of-type { border-top: none; }
-    .akp-prov-toggle {
-      width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
-      padding: 12px 2px; border: none; background: transparent; cursor: pointer;
-      color: inherit; font: inherit; border-radius: 8px;
-    }
-    .akp-prov-toggle:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.12)); }
-    .akp-prov-toggle:focus-visible {
-      outline: 2px solid var(--dsw-alias-brand-primary, #4a9eff);
-      outline-offset: -2px;
-    }
-    .akp-prov-toggle-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .akp-prov-name {
-      font-weight: 600; font-size: 13px; line-height: 20px;
-      color: var(--dsw-alias-label-primary, inherit);
-    }
-    .akp-prov-sub {
-      font-size: 12px; line-height: 18px;
-      color: var(--dsw-alias-label-tertiary, #888);
-    }
-    .akp-chevron {
-      flex: none; width: 14px; height: 14px;
-      color: var(--dsw-alias-label-tertiary, #888);
-      transition: transform .16s ease;
-      display: inline-flex; align-items: center; justify-content: center;
-    }
-    .akp-prov.open .akp-chevron { transform: rotate(180deg); }
-    .akp-prov-body { padding: 0 2px 12px; display: flex; flex-direction: column; gap: 8px; }
-    .akp-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 6px 0; font-size: 12px;
-      color: var(--dsw-alias-label-secondary, inherit);
-    }
-    .akp-key-masked {
-      flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px; color: var(--dsw-alias-label-primary, inherit);
-    }
-    .akp-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .akp-status.healthy { background: var(--dsw-alias-state-success-primary, #4caf50); }
-    .akp-status.cooling { background: var(--dsw-alias-state-warn-primary, #ff9800); }
-    .akp-meta { font-size: 11px; color: var(--dsw-alias-label-tertiary, #888); }
-    .akp-x {
-      cursor: pointer; font-size: 12px; padding: 2px 6px; border: none; border-radius: 6px;
-      background: transparent; color: var(--dsw-alias-label-tertiary, #888);
-    }
-    .akp-x:hover {
-      color: var(--dsw-alias-state-error-primary, #e57373);
-      background: var(--dsw-alias-bg-layer-2, rgba(127,127,127,.12));
-    }
-    .akp-field { display: flex; gap: 8px; align-items: center; }
-    .akp-field input, .akp-addprov input {
-      flex: 1; min-width: 0; height: 34px; box-sizing: border-box;
-      padding: 0 12px; font: inherit; font-size: 13px; line-height: 1.5;
-      border: 0.5px solid var(--dsw-alias-border-l4, #555);
-      border-radius: 8px;
-      background: var(--dsw-alias-bg-layer-3, transparent);
-      color: var(--dsw-alias-label-primary, inherit);
-    }
-    .akp-field input:focus-visible, .akp-addprov input:focus-visible {
-      border-color: var(--dsw-alias-brand-primary, #4a9eff); outline: none;
-    }
-    .akp-field input::placeholder, .akp-addprov input::placeholder {
-      color: var(--dsw-alias-label-tertiary, #888);
-    }
-    .akp-btn {
-      appearance: none; font: inherit; cursor: pointer;
-      border: 1px solid var(--dsw-alias-border-l2, #555);
-      border-radius: 8px; padding: 5px 14px; font-size: 13px; line-height: 1.5;
-      background: transparent; color: var(--dsw-alias-label-secondary, inherit);
-    }
-    .akp-btn:hover:not(:disabled) {
-      color: var(--dsw-alias-label-primary, inherit);
-      border-color: var(--dsw-alias-label-dimmed, #777);
-      background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.12));
-    }
-    .akp-btn:disabled { opacity: .4; cursor: default; }
-    .akp-btn:focus-visible {
-      outline: 2px solid var(--dsw-alias-brand-primary, #4a9eff); outline-offset: 1px;
-    }
-    .akp-btn.primary {
-      border-color: transparent;
-      background: var(--dsw-alias-label-primary, #eee);
-      color: var(--dsw-alias-bg-layer-3, #111);
-    }
-    .akp-btn.primary:hover:not(:disabled) {
-      background: var(--dsw-alias-button-primary-hover, #ddd);
-      border-color: transparent;
-      color: var(--dsw-alias-bg-layer-3, #111);
-    }
-    .akp-addprov {
-      display: flex; gap: 8px; margin-top: 4px; padding-top: 12px;
-      border-top: 0.5px solid var(--dsw-alias-border-l2, #444);
-    }
-    .akp-msg { font-size: 12px; line-height: 1.5; margin: 0; padding: 4px 2px; }
-    .akp-msg.ok { color: var(--dsw-alias-state-success-primary, #81c784); }
-    .akp-msg.err { color: var(--dsw-alias-label-error, #e57373); }
-    .akp-empty {
-      font-size: 12px; line-height: 18px; margin: 0; padding: 4px 2px;
-      color: var(--dsw-alias-label-tertiary, #888);
     }
   `
   document.head.appendChild(css)
@@ -242,20 +122,6 @@ async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
   return data as T
 }
 
-function ChevronIcon(): React.ReactElement {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path
-        d="M3 5.25L7 9.25L11 5.25"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 function summarizePool(
   keys: string[],
   states: Record<string, KeyState>,
@@ -270,6 +136,18 @@ function summarizePool(
   else if (keys.length > 0) parts.push('healthy')
   else parts.push('no keys yet')
   return parts.join(' · ')
+}
+
+function ProviderIcon(): React.ReactElement {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M5 7.5a2.5 2.5 0 1 1 5 0v1.5h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1V7.5Z"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+    </svg>
+  )
 }
 
 function ApiKeyPoolSection(): React.ReactElement {
@@ -397,26 +275,25 @@ function ApiKeyPoolSection(): React.ReactElement {
   const allProviders = [...new Set([...state.llmProviders, ...Object.keys(state.pools)])]
 
   return (
-    <div className="akp-section">
-      <p className="akp-intro">
+    <section style={sectionStyle}>
+      <p style={{ margin: 0, fontSize: 13, lineHeight: '20px' }}>
         Round-robin API keys per provider. Expand a provider to manage keys. Failed keys cool down
         automatically.
       </p>
 
-      <div className="akp-badge">
-        <span className="akp-badge-name">dsh-api-key-pool</span>
-        <span className="akp-badge-tag">v{PLUGIN_VERSION}</span>
-      </div>
+      <Pill active>
+        dsh-api-key-pool <Tag tone="quiet">v{PLUGIN_VERSION}</Tag>
+      </Pill>
 
-      <div className="akp-group">
-        <div className="akp-group-heading">
-          Providers
-          <span className="akp-count">{allProviders.length}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px' }}>
+          <strong style={{ fontSize: 13 }}>Providers</strong>
+          <Tag tone="neutral">{allProviders.length}</Tag>
         </div>
 
-        {state.loading ? <p className="akp-empty">Loading…</p> : null}
+        {state.loading ? <p style={{ margin: 0, fontSize: 12 }}>Loading…</p> : null}
         {!state.loading && allProviders.length === 0 ? (
-          <p className="akp-empty">No providers yet — add one below.</p>
+          <p style={{ margin: 0, fontSize: 12 }}>No providers yet — add one below.</p>
         ) : null}
 
         {allProviders.map((name) => {
@@ -427,114 +304,106 @@ function ApiKeyPoolSection(): React.ReactElement {
           const open = Boolean(state.expanded[name])
 
           return (
-            <div key={name} className={`akp-prov${open ? ' open' : ''}`}>
-              <button
-                type="button"
-                className="akp-prov-toggle"
-                aria-expanded={open}
-                onClick={() => toggleExpanded(name)}
-              >
-                <span className="akp-prov-toggle-main">
-                  <span className="akp-prov-name">{name}</span>
-                  <span className="akp-prov-sub">{summarizePool(keys, states, isLlm)}</span>
-                </span>
-                <span className="akp-chevron">
-                  <ChevronIcon />
-                </span>
-              </button>
-
-              {open ? (
-                <div className="akp-prov-body">
-                  {keys.map((masked, i) => {
-                    const st = states[masked] || { failCount: 0, cooldownUntil: 0 }
-                    const cooling = st.cooldownUntil > Date.now()
-                    return (
-                      <div key={`${masked}-${i}`} className="akp-row">
-                        <span className={`akp-status ${cooling ? 'cooling' : 'healthy'}`} />
-                        <span className="akp-key-masked">{masked}</span>
-                        <span className="akp-meta">
-                          {cooling
-                            ? `cooling until ${new Date(st.cooldownUntil).toLocaleTimeString()}`
-                            : st.failCount > 0
-                              ? `fails ${st.failCount}`
-                              : 'healthy'}
-                        </span>
-                        <button
-                          className="akp-x"
-                          type="button"
-                          onClick={() => void handleRemoveKey(name, i)}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )
-                  })}
-
-                  {keys.length === 0 ? <p className="akp-empty">No keys yet</p> : null}
-
-                  <div className="akp-field">
-                    <input
-                      placeholder="Paste API key…"
-                      value={state.addInputs[name] || ''}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        setState((s) => ({
-                          ...s,
-                          addInputs: { ...s.addInputs, [name]: e.target.value },
-                        }))
-                      }
-                      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-                        if (e.key === 'Enter') void handleAddKey(name)
-                      }}
-                    />
-                    <button
-                      className="akp-btn primary"
+            <DisclosureRow
+              key={name}
+              icon={<ProviderIcon />}
+              title={name}
+              open={open}
+              expandable
+              expandOnRowClick
+              onToggle={() => toggleExpanded(name)}
+              collapsedContent={summarizePool(keys, states, isLlm)}
+            >
+              {keys.map((masked, i) => {
+                const st = states[masked] || { failCount: 0, cooldownUntil: 0 }
+                const cooling = st.cooldownUntil > Date.now()
+                return (
+                  <div key={`${masked}-${i}`} style={rowStyle}>
+                    <StateDot state={cooling ? 'warning' : 'done'} />
+                    <code style={{ flex: 1, minWidth: 0, fontSize: 12 }}>{masked}</code>
+                    <Tag tone={cooling ? 'warning' : st.failCount > 0 ? 'info' : 'success'}>
+                      {cooling
+                        ? `cooling until ${new Date(st.cooldownUntil).toLocaleTimeString()}`
+                        : st.failCount > 0
+                          ? `fails ${st.failCount}`
+                          : 'healthy'}
+                    </Tag>
+                    <Button
                       type="button"
-                      onClick={() => void handleAddKey(name)}
-                      disabled={!(state.addInputs[name] || '').trim()}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void handleRemoveKey(name, i)}
                     >
-                      Add
-                    </button>
+                      Remove
+                    </Button>
                   </div>
-                  {pool ? (
-                    <button className="akp-btn" type="button" onClick={() => void handleReset(name)}>
-                      Reset cooldown
-                    </button>
-                  ) : null}
-                </div>
+                )
+              })}
+
+              {keys.length === 0 ? <p style={{ margin: 0, fontSize: 12 }}>No keys yet</p> : null}
+
+              <div style={fieldRowStyle}>
+                <Input
+                  placeholder="Paste API key…"
+                  value={state.addInputs[name] || ''}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      addInputs: { ...s.addInputs, [name]: e.target.value },
+                    }))
+                  }
+                  onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+                    if (e.key === 'Enter') void handleAddKey(name)
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={!(state.addInputs[name] || '').trim()}
+                  onClick={() => void handleAddKey(name)}
+                >
+                  Add
+                </Button>
+              </div>
+
+              {pool ? (
+                <Button type="button" variant="outline" onClick={() => void handleReset(name)}>
+                  Reset cooldown
+                </Button>
               ) : null}
-            </div>
+            </DisclosureRow>
           )
         })}
 
-        <div className="akp-addprov">
-          <input
+        <div style={{ ...fieldRowStyle, marginTop: 8, paddingTop: 12, borderTop: '0.5px solid var(--dsw-alias-border-l2, #444)' }}>
+          <Input
             placeholder="Provider id (if not listed)…"
             value={state.newProvName}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setState((s) => ({ ...s, newProvName: e.target.value }))
-            }
+            onChange={(e) => setState((s) => ({ ...s, newProvName: e.target.value }))}
             onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
               if (e.key === 'Enter') void handleAddProvider()
             }}
           />
-          <button
-            className="akp-btn"
+          <Button
             type="button"
-            onClick={() => void handleAddProvider()}
+            variant="outline"
             disabled={!state.newProvName.trim()}
+            onClick={() => void handleAddProvider()}
           >
             Add provider
-          </button>
+          </Button>
         </div>
 
-        {state.msg ? <div className={`akp-msg ${state.msg.type}`}>{state.msg.text}</div> : null}
+        {state.msg ? (
+          <Tag tone={state.msg.type === 'ok' ? 'success' : 'danger'}>{state.msg.text}</Tag>
+        ) : null}
       </div>
-    </div>
+    </section>
   )
 }
 
 export function apply(ctx: ClientPluginContext): void {
-  ctx.effect(installStyles, 'dsh-api-key-pool: styles')
+  ctx.effect(installNavIconStyles, 'dsh-api-key-pool: nav icon styles')
   ctx.effect(
     () => registerSettingsNavIcon(() => SETTINGS_NAV_LABEL),
     'dsh-api-key-pool: settings navigation icon',

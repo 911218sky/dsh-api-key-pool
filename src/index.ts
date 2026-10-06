@@ -10,32 +10,10 @@ import {
 import { isRetryableFailure, log, maskKey, turnIdFromPayload } from './util.js'
 
 export const name = 'api-key-pool'
-export const inject = ['llm', 'webServer', 'settings', 'credentials'] as const
+export const inject = ['llm', 'webServer', 'credentials'] as const
 
 export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): void {
-  // Register settings namespace (pairs with client settings.section / future schema).
-  // Pool data lives in pool-config.json / REST; empty schema is enough.
-  ctx.inject(['settings'], async (sctx) => {
-    try {
-      // Lazy import avoids a Node require(ESM) race with parallel plugin entry loading.
-      const schemastery = await import('@deepseek-ai/schemastery')
-      const zs = schemastery.default ?? schemastery
-      const scope = sctx.settings.register('api-key-pool', zs.object({}), { base: {} })
-      sctx.effect(() => () => {
-        void scope
-      }, 'api-key-pool: settings namespace')
-      log(ctx, 'info', 'settings namespace api-key-pool registered')
-    } catch (err: unknown) {
-      log(
-        ctx,
-        'error',
-        `settings.register(api-key-pool) failed — Settings section may stay hidden: ${String(
-          err instanceof Error ? err.message : err,
-        )}`,
-      )
-    }
-  })
-
+  // DSH 0.2 removed settings.register; pool UI is settings.section on the client.
   // DSH treats non-loopback pages as settings-unavailable (memory persistence).
   // When browsing via --trusted-host, mark the page as owning the host so
   // Settings → Models can load the provider directory.
