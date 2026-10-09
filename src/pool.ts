@@ -28,6 +28,20 @@ function emptyState(): KeyState {
   return { failCount: 0, cooldownUntil: 0 }
 }
 
+/**
+ * Mask keys for public views; append `#2`, `#3`, … when `maskKey` collides so
+ * `states` object keys stay unique and aligned with `maskedKeys` order.
+ */
+export function uniqueMaskedKeys(keys: string[]): string[] {
+  const seen = new Map<string, number>()
+  return keys.map((key) => {
+    const base = maskKey(key)
+    const n = (seen.get(base) || 0) + 1
+    seen.set(base, n)
+    return n === 1 ? base : `${base}#${n}`
+  })
+}
+
 function defaultApiKeyEnv(provider: string): string {
   const env = `${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`
   try {
@@ -111,8 +125,12 @@ function mergeKeys(persistedKeys: string[] | undefined, configKeys: string[] | u
 export class KeyPoolManager {
   readonly pools = new Map<string, PoolRuntime>()
   readonly modes = new Map<string, string>()
-  /** Per-provider stack of keys bound to in-flight requests (LIFO). */
-  private readonly inflight = new Map<string, string[]>()
+  /**
+   * Per-provider map of turnId → key currently bound to that request.
+   * Keyed by turn (not a LIFO stack) so concurrent same-provider requests
+   * do not steal each other's failure accounting.
+   */
+  private readonly inflight = new Map<string, Map<string, string>>()
   /** Last successfully used key per provider (for markSuccess heuristics). */
   private readonly lastSuccessCandidate = new Map<string, string>()
   private readonly probeTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -214,24 +232,43 @@ export class KeyPoolManager {
     return live[0]
   }
 
-  /** Bind a key to the current in-flight request for this provider. */
-  bindInflight(provider: string, key: string): void {
-    const stack = this.inflight.get(provider) || []
-    stack.push(key)
-    this.inflight.set(provider, stack)
+  /** True when any request still has a bound key for this provider. */
+  hasInflight(provider: string): boolean {
+    const map = this.inflight.get(provider)
+    return map !== undefined && map.size > 0
+  }
+
+  /** Bind a key to the in-flight request identified by `turnId`. */
+  bindInflight(provider: string, turnId: string, key: string): void {
+    let map = this.inflight.get(provider)
+    if (!map) {
+      map = new Map()
+      this.inflight.set(provider, map)
+    }
+    map.set(turnId, key)
     this.lastSuccessCandidate.set(provider, key)
   }
 
-  /** Pop the key bound to the failing request (LIFO). */
-  takeInflightKey(provider: string): string | undefined {
-    const stack = this.inflight.get(provider)
-    if (!stack || stack.length === 0) return undefined
-    return stack.pop()
+  /** Take (and clear) the key bound to this turn's request. */
+  takeInflightKey(provider: string, turnId: string): string | undefined {
+    const map = this.inflight.get(provider)
+    if (!map) return undefined
+    const key = map.get(turnId)
+    map.delete(turnId)
+    if (map.size === 0) this.inflight.delete(provider)
+    return key
   }
 
-  /** Drop inflight binding after a successful turn start for a new non-retry request. */
-  clearInflight(provider: string): void {
-    this.inflight.delete(provider)
+  /** Drop one turn's binding (e.g. non-retry replace of the same turnId). */
+  clearInflight(provider: string, turnId?: string): void {
+    if (turnId === undefined) {
+      this.inflight.delete(provider)
+      return
+    }
+    const map = this.inflight.get(provider)
+    if (!map) return
+    map.delete(turnId)
+    if (map.size === 0) this.inflight.delete(provider)
   }
 
   markSuccess(provider: string, key: string): void {
@@ -389,12 +426,21 @@ export class KeyPoolManager {
   publicView(provider: string): PoolPublicView | undefined {
     const pool = this.pools.get(provider)
     if (!pool) return undefined
+    // Disambiguate colliding masks (same prefix/suffix) so UI state keys stay 1:1.
+    const maskedKeys = uniqueMaskedKeys(pool.keys)
+    const states: Record<string, KeyState> = {}
+    for (let i = 0; i < pool.keys.length; i++) {
+      const raw = pool.keys[i]!
+      const masked = maskedKeys[i]!
+      const st = pool.states.get(raw)
+      states[masked] = st ? { ...st } : emptyState()
+    }
     return {
       apiKeyEnv: pool.env,
-      maskedKeys: pool.keys.map(maskKey),
+      maskedKeys,
       keyCount: pool.keys.length,
       mode: this.modes.get(provider) || 'auto',
-      states: Object.fromEntries([...pool.states].map(([k, s]) => [maskKey(k), { ...s }])),
+      states,
     }
   }
 

@@ -580,7 +580,9 @@ export function turnIdFromPayload(payload: {
     if (t.id != null && String(t.id).length > 0) return `${agentKey}:${String(t.id)}`
     if (t.turnId != null && String(t.turnId).length > 0) return `${agentKey}:${String(t.turnId)}`
   }
-  return `${agentKey}:anon-${Date.now()}`
+  // Stable per-agent fallback so request + request-error share the same retry
+  // budget when `turn` is missing (Date.now() would mint a new id each call).
+  return `${agentKey}:anon`
 }
 
 /** Stable opaque id for logs (optional helper). */

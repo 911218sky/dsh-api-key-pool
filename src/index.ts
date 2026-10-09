@@ -46,8 +46,23 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
       if (!key) return next()
       log(ctx, 'info', `llm/stream: rotated key ${maskKey(key)} for '${provider}'`)
       return (async function* () {
-        await manager.applyKeyToEnv(provider, key)
-        yield* next() as AsyncIterable<unknown>
+        // Serialize env/credential apply with agent/request; stamp call fields so
+        // the stream does not depend on a stable process.env across concurrency.
+        await manager.withEnvSerial(provider, async () => {
+          await manager.applyKeyToEnv(provider, key)
+          if (options && typeof options === 'object') {
+            manager.applyKeyToCallConfig(options, key)
+          }
+        })
+        try {
+          yield* next() as AsyncIterable<unknown>
+        } catch (err: unknown) {
+          // Stream path has no agent/request-error inflight slot; cool this key
+          // directly so the next pick skips a just-failed credential.
+          const msg = err instanceof Error ? err.message : String(err)
+          manager.markFailed(provider, key, msg || 'STREAM')
+          throw err
+        }
       })()
     },
     { global: true },
@@ -73,9 +88,14 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
       for (const key of turnRetries.keys()) {
         if (key.startsWith(prefix) && key !== turnId) turnRetries.delete(key)
       }
-      // Previous turn's key for this provider likely succeeded if we start fresh.
-      manager.markPreviousSuccess(provider)
-      manager.clearInflight(provider)
+      // Only credit the previous key when nothing else is still in flight for
+      // this provider — otherwise a concurrent request would clear cooldown of
+      // a key that has not actually succeeded yet.
+      if (!manager.hasInflight(provider)) {
+        manager.markPreviousSuccess(provider)
+      }
+      // Drop only this turn's prior binding (e.g. abandoned); keep siblings.
+      manager.clearInflight(provider, turnId)
     }
 
     const key = manager.pickKey(provider)
@@ -84,7 +104,7 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
     return manager.withEnvSerial(provider, async () => {
       await manager.applyKeyToEnv(provider, key)
       manager.applyKeyToCallConfig(call, key)
-      manager.bindInflight(provider, key)
+      manager.bindInflight(provider, turnId, key)
       log(
         ctx,
         'info',
@@ -105,7 +125,7 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
       return next()
     }
 
-    const boundKey = manager.takeInflightKey(provider)
+    const boundKey = manager.takeInflightKey(provider, turnId)
     if (boundKey) {
       manager.markFailed(provider, boundKey, code)
       log(ctx, 'info', `key ${maskKey(boundKey)} failed (${code})`)
