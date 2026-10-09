@@ -70,7 +70,7 @@ Canonical styles live in `installStyles()` inside `src/client/index.tsx`.
 - PluginCard: `~/.config/dsh/profiles/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/`
 - Slot contract: `…/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts`
 - Side card CSS: `…/dsh-better-sidebar/src/client/SideCardSection.module.css`
-- Nav icon hack: `…/dsh-better-sidebar/src/client/settings-nav-icon.ts`
+- Nav icon workaround: `…/dsh-better-sidebar/src/client/settings-nav-icon.ts`
 
 ---
 

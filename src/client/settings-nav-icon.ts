@@ -1,5 +1,5 @@
 /**
- * Settings left-nav icon hack: DSH has no icon field on `settings.section`,
+ * Settings left-nav icon workaround: DSH has no icon field on `settings.section`,
  * so we mark our nav button and paint a key glyph via CSS mask.
  *
  * Upstream permanent fix: an icon/slot API on `settings.section`. Until then

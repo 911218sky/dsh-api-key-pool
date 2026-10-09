@@ -29,7 +29,7 @@ export function registerRoutes(
 ): void {
   const requireAuth = config.requireAuthForMutations !== false
   if (!requireAuth) {
-    // Loud footgun warning when admin API is open on non-loopback.
+    // Warn when admin API is open on non-loopback without auth.
     try {
       ctx.logger?.warn?.(
         '[api-key-pool] requireAuthForMutations=false — pool admin routes are open to the network',
@@ -230,7 +230,7 @@ async function handleVerify(
     return
   }
 
-  // Snapshot keys for probe so we do not permanently scramble live cooldown/idx
+  // Snapshot keys for probe so we do not permanently reorder live cooldown/idx
   // beyond marking failures that are still useful signal.
   const savedIdx = manager.pools.get(provider)!.idx
   manager.resetCooldown(provider)

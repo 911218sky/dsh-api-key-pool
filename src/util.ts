@@ -581,7 +581,7 @@ export function turnIdFromPayload(payload: {
     if (t.turnId != null && String(t.turnId).length > 0) return `${agentKey}:${String(t.turnId)}`
   }
   // Stable per-agent fallback so request + request-error share the same retry
-  // budget when `turn` is missing (Date.now() would mint a new id each call).
+  // budget when `turn` is missing (Date.now() would create a new id each call).
   return `${agentKey}:anon`
 }
 

@@ -135,7 +135,7 @@ Client `inject`：`['configForms', 'slots']`（0.1.7+；0.1.5 為 `settingsScope
 | PluginCard 樣式／結構 | `~/.config/dsh/profiles/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js` |
 | Settings slot 合約 | `…/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts` |
 | Side card 頁面食譜 | `…/dsh-better-sidebar/src/client/SideCardSection.module.css` |
-| Nav icon hack | `…/dsh-better-sidebar/src/client/settings-nav-icon.ts` |
+| Nav icon workaround | `…/dsh-better-sidebar/src/client/settings-nav-icon.ts` |
 | Input／Button token | `…/dsh-client-ui-primitives/lib/Input.module.css`、`Button.module.css` |
 
 改 UI 前先對一下上述檔案的 token，再動本專案 CSS。
