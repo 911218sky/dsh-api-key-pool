@@ -343,18 +343,41 @@ export class KeyPoolManager {
   }
 
   /**
-   * Also stamp common call-config fields so credential resolution that already
-   * captured env is less likely to miss the rotated key (best-effort).
+   * Return a new call-config with common auth fields stamped.
+   *
+   * DSH 0.2 `agent/request` seeds are `deepFreeze`d before the waterfall, so
+   * in-place assignment (`call.apiKey = …`) throws
+   * "Cannot assign to read only property 'apiKey'". Always spread into a fresh
+   * object (same pattern as dsh-agent model selection).
    */
+  withKeyOnCallConfig<T extends object>(call: T, key: string): T & {
+    apiKey: string
+    authorization: string
+    headers: Record<string, string>
+  } {
+    const prev = call as { headers?: Record<string, string> }
+    return {
+      ...call,
+      apiKey: key,
+      authorization: `Bearer ${key}`,
+      headers: { ...(prev.headers || {}), Authorization: `Bearer ${key}` },
+    }
+  }
+
+  /** @deprecated Prefer {@link withKeyOnCallConfig}; mutates only when extensible. */
   applyKeyToCallConfig(
     call: { apiKey?: string; headers?: Record<string, string>; authorization?: string },
     key: string,
   ): void {
-    call.apiKey = key
-    call.authorization = `Bearer ${key}`
-    const headers = { ...(call.headers || {}) }
-    headers.Authorization = `Bearer ${key}`
-    call.headers = headers
+    if (!Object.isExtensible(call)) {
+      // Frozen GenerateOptions (llm/stream) cannot be replaced by middleware —
+      // credentials.set via applyKeyToEnv is the real injection path.
+      return
+    }
+    const stamped = this.withKeyOnCallConfig(call, key)
+    call.apiKey = stamped.apiKey
+    call.authorization = stamped.authorization
+    call.headers = stamped.headers
   }
 
   withEnvSerial<T>(provider: string, fn: () => T | Promise<T>): Promise<T> {

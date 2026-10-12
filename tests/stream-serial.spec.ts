@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { KeyPoolManager } from '../src/pool.ts'
 import type { PluginContextWithEvents } from '../src/types.ts'
 
-describe('withEnvSerial + applyKeyToCallConfig (stream-shaped options)', () => {
+describe('withEnvSerial + withKeyOnCallConfig (stream-shaped options)', () => {
   it('stamps call config under the env serial lock', async () => {
     const set = vi.fn(async () => undefined)
     const manager = new KeyPoolManager(
@@ -19,13 +19,14 @@ describe('withEnvSerial + applyKeyToCallConfig (stream-shaped options)', () => {
       provider: 'p',
     }
     const key = manager.pickKey('p')!
+    let stamped: typeof options & { apiKey: string; headers: Record<string, string> }
     await manager.withEnvSerial('p', async () => {
       await manager.applyKeyToEnv('p', key)
-      manager.applyKeyToCallConfig(options, key)
+      stamped = manager.withKeyOnCallConfig(options, key)
     })
 
-    expect(options.apiKey).toBe('sk-stream-test-key')
-    expect(options.headers?.Authorization).toBe('Bearer sk-stream-test-key')
+    expect(stamped!.apiKey).toBe('sk-stream-test-key')
+    expect(stamped!.headers.Authorization).toBe('Bearer sk-stream-test-key')
     expect(set).toHaveBeenCalledWith('P_API_KEY', 'sk-stream-test-key')
     manager.dispose()
   })

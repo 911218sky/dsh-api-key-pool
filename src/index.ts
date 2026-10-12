@@ -48,6 +48,9 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
       return (async function* () {
         // Serialize env/credential apply with agent/request; stamp call fields so
         // the stream does not depend on a stable process.env across concurrency.
+        // llm/stream cannot replace `options` (waterfall closes over the
+        // original). DSH freezes agent-loop requests, so mutate is a no-op;
+        // credentials.set via applyKeyToEnv is what llm-pi-ai resolves.
         await manager.withEnvSerial(provider, async () => {
           await manager.applyKeyToEnv(provider, key)
           if (options && typeof options === 'object') {
@@ -103,14 +106,15 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
 
     return manager.withEnvSerial(provider, async () => {
       await manager.applyKeyToEnv(provider, key)
-      manager.applyKeyToCallConfig(call, key)
+      // Return a fresh object — seedConfig from agent-loop is deepFrozen.
+      const stamped = manager.withKeyOnCallConfig(call, key)
       manager.bindInflight(provider, turnId, key)
       log(
         ctx,
         'info',
         `injected key ${maskKey(key)} for '${provider}'${isRetry ? ` (retry ${retriesSoFar})` : ''}`,
       )
-      return call
+      return stamped
     })
   })
 
