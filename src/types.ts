@@ -164,10 +164,10 @@ export interface CredentialsService {
   set: (ref: string, value: string) => Promise<unknown> | unknown
 }
 
-/** Minimal llm service surface used for provider discovery. */
+/** Minimal llm service surface used for provider discovery (active routes only). */
 export interface LlmService {
+  /** Registered/configured provider routes — not the full configurable catalog. */
   listProviders?: () => Array<{ id: string }>
-  listConfigurableProviders?: () => Array<{ provider: string }>
 }
 
 export interface EventHandlerOptions {

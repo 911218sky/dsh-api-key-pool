@@ -468,21 +468,20 @@ function llmServiceOf(ctx?: LogContext | null): LlmService | undefined {
   return undefined
 }
 
-/** Prefer official `ctx.llm` registry APIs over parsing YAML / settings blobs. */
+/**
+ * Active LLM provider ids only (`listProviders`).
+ *
+ * Do NOT use `listConfigurableProviders` here — that is the full built-in
+ * directory (~40 templates). Key pools are per configured provider route
+ * (e.g. `nvidia-nim`), not per model and not per catalog template.
+ */
 function providersFromLlm(ctx?: LogContext | null): string[] {
   try {
     const llm = llmServiceOf(ctx)
-    if (!llm) return []
+    if (!llm || typeof llm.listProviders !== 'function') return []
     const names = new Set<string>()
-    if (typeof llm.listConfigurableProviders === 'function') {
-      for (const row of llm.listConfigurableProviders()) {
-        if (row?.provider) names.add(row.provider)
-      }
-    }
-    if (typeof llm.listProviders === 'function') {
-      for (const row of llm.listProviders()) {
-        if (row?.id) names.add(row.id)
-      }
+    for (const row of llm.listProviders()) {
+      if (row?.id) names.add(row.id)
     }
     return [...names]
   } catch (err: unknown) {
@@ -516,15 +515,19 @@ function providersFromSettingsDescribe(ctx?: LogContext | null): string[] {
   return []
 }
 
+/**
+ * Provider ids the operator actually configured (pools are per provider, not model).
+ *
+ * Order:
+ * 1. settings.describe `providers:` — configured in the Models UI / profile
+ * 2. profile YAML `providers:` blocks — cordis.patch.yml etc.
+ * 3. `llm.listProviders()` — active routes only (never the full catalog)
+ */
 export function discoverProvidersFromSettings(ctx?: LogContext | null): string[] {
-  const fromLlm = providersFromLlm(ctx)
-  if (fromLlm.length > 0) return fromLlm
-
   const fromDescribe = providersFromSettingsDescribe(ctx)
-  if (fromDescribe.length > 0) return fromDescribe
+  if (fromDescribe.length > 0) return fromDescribe.sort((a, b) => a.localeCompare(b))
 
   const found = new Set<string>()
-  // Last resort: profile YAML / legacy settings.yaml (pre-llm-registry compositions).
   const files = [
     dshHomePath('profiles', 'web', 'cordis.patch.yml'),
     dshHomePath('profiles', 'web', 'cordis.yml'),
@@ -540,7 +543,9 @@ export function discoverProvidersFromSettings(ctx?: LogContext | null): string[]
       log(ctx, 'warn', `discoverProviders (${file}) failed: ${errorMessage(err)}`)
     }
   }
-  return [...found]
+  if (found.size > 0) return [...found].sort((a, b) => a.localeCompare(b))
+
+  return providersFromLlm(ctx).sort((a, b) => a.localeCompare(b))
 }
 
 /**

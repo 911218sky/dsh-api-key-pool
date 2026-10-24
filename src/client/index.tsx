@@ -231,10 +231,9 @@ function ApiKeyPoolSection(): React.ReactElement {
     }
   }
 
-  // Only show pools that have at least one key — not every built-in DSH provider.
-  const allProviders = Object.keys(state.pools)
-    .filter((name) => (state.pools[name]?.keyCount ?? 0) > 0)
-    .sort((a, b) => a.localeCompare(b))
+  // Pools are already scoped to configured/persisted providers (not the full
+  // LLM catalog, not individual models). Show every pool, including empty ones.
+  const allProviders = Object.keys(state.pools).sort((a, b) => a.localeCompare(b))
 
   return (
     <section style={sectionStyle}>

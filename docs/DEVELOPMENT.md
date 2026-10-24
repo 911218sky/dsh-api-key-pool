@@ -81,7 +81,7 @@ Canonical styles live in `installStyles()` inside `src/client/index.tsx`.
 - Validate `apiKeyEnv` with `assertSafeApiKeyEnv`.
 - Listen to `llm/stream` with `{ global: true }` as well as `agent/request`.
 - Paths: `@deepseek-ai/dsh-home-paths` (`resolveDshHome` / `dshHomePath`), not a hand-rolled `DSH_HOME`.
-- Providers: prefer `ctx.llm.listConfigurableProviders()` / `listProviders()` before YAML fallbacks.
+- Providers: prefer `ctx.llm.listProviders()` (active routes only — never `listConfigurableProviders`, which is the full ~40-template catalog) before settings.describe / YAML fallbacks. Key pools are per provider, not per model.
 - Key rotation: `resolveRetryPolicy` defaults + `AUTH` / `QUOTA` / `ACCOUNT_QUOTA` / `INVALID_CREDENTIAL`.
 - Turn retry budget: scope `turnId` by `agent.id`; delete the entry when giving up.
 
