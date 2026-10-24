@@ -13,7 +13,6 @@ import type {
 import { DEFAULT_COOLDOWN_MS } from './types.js'
 import {
   assertSafeApiKeyEnv,
-  discoverProvidersFromSettings,
   ensureStorageDir,
   errorMessage,
   legacyPoolConfigPath,
@@ -158,10 +157,12 @@ export class KeyPoolManager {
       }
     }
 
-    const names = new Set([
-      ...Object.keys(merged),
-      ...discoverProvidersFromSettings(this.ctx),
-    ])
+    // Only materialize pools that are configured or persisted.
+    // Auto-creating empty pools for every built-in LLM provider floods the
+    // Settings UI with 40+ "0 keys" rows (nvidia-nim is usually the only one
+    // the operator cares about). Discovery remains available via /llm-providers
+    // for the "Add provider" flow.
+    const names = new Set(Object.keys(merged))
 
     for (const provider of names) {
       const pcfg = merged[provider] || {}
