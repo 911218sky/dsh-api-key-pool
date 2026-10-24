@@ -238,8 +238,8 @@ function ApiKeyPoolSection(): React.ReactElement {
   return (
     <section style={sectionStyle}>
       <p style={{ margin: 0, fontSize: 13, lineHeight: '20px' }}>
-        Round-robin API keys per provider. Expand a provider to manage keys. Failed keys cool down
-        automatically.
+        Sticky API keys per provider (reuse until rate-limit / auth failure). Expand a provider to
+        manage keys. Failed keys cool down automatically.
       </p>
 
       <Pill active>

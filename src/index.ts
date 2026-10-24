@@ -44,7 +44,7 @@ export function apply(ctx: PluginContextWithEvents, config: PluginConfig = {}): 
       if (!provider) return next()
       const key = manager.pickKey(provider)
       if (!key) return next()
-      log(ctx, 'info', `llm/stream: rotated key ${maskKey(key)} for '${provider}'`)
+      log(ctx, 'info', `llm/stream: using key ${maskKey(key)} for '${provider}'`)
       return (async function* () {
         // Serialize env/credential apply with agent/request; stamp call fields so
         // the stream does not depend on a stable process.env across concurrency.

@@ -1,6 +1,6 @@
 # dsh-api-key-pool
 
-給 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）用的多 Key **輪詢** + **失敗切換** 外掛。
+給 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）用的多 Key **黏住到失敗再換** + **失敗切換** 外掛。
 
 參考／改寫自 [xiaozhe7772222/dsh-api-key-pool](https://github.com/xiaozhe7772222/dsh-api-key-pool)。本倉庫以 TypeScript 重寫，支援 `DSH_HOME`，公開 API 只回傳遮罩後的 Key，並提供簡易 Web 設定面板。
 
@@ -13,7 +13,7 @@
 DSH「模型」頁面每個 provider **只能存一把** API Key。如果你同一個中轉／官方帳號有多把 Key（限流、額度、備援），這個外掛可以：
 
 1. 把多把 Key 放進同一個 **pool**
-2. 每次請求輪流使用（round-robin）
+2. 同一把 Key 一直用到撞限流／失效才換（sticky）
 3. 遇到 401 / 403 / 429 / 配額 / 逾時等錯誤 → 該 Key 進入冷卻，**自動換下一把重試**
 
 ---
@@ -22,7 +22,7 @@ DSH「模型」頁面每個 provider **只能存一把** API Key。如果你同�
 
 ```
 對話請求
-   → 外掛選一把健康的 Key（輪詢）
+   → 外掛沿用目前健康的 Key（黏住）
    → 寫入 process.env[apiKeyEnv]
    → DSH 憑證優先讀環境變數（高於 .credentials.yaml）
    → 打到 provider API
@@ -30,7 +30,7 @@ DSH「模型」頁面每個 provider **只能存一把** API Key。如果你同�
 失敗（認證／限流／…）
    → 標記該 Key 冷卻
    → 請 agent 重試
-   → 下次再選下一把
+   → 下次黏住下一把健康 Key
 ```
 
 **重點：** pool 的 `apiKeyEnv` 必須跟該 provider 在 DSH 裡的 `apiKeyEnv` 一致（例如 `EASYTOKENS_CODEX_API_KEY`）。

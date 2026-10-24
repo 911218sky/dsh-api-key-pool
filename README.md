@@ -1,6 +1,6 @@
 # dsh-api-key-pool
 
-Multi-key **round-robin** + **failover** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) providers.
+Multi-key **sticky-until-fail** + **failover** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) providers.
 
 Based on / inspired by [xiaozhe7772222/dsh-api-key-pool](https://github.com/xiaozhe7772222/dsh-api-key-pool). This fork is rewritten in TypeScript, honors `DSH_HOME`, masks keys in the public API, and includes a small Web settings panel.
 
@@ -13,7 +13,7 @@ Based on / inspired by [xiaozhe7772222/dsh-api-key-pool](https://github.com/xiao
 DSH’s Models page stores **one** API key per provider. If you have several keys for the same gateway (rate limits, shared quota, backup keys), this plugin lets you:
 
 1. Put multiple keys in one **pool** for that provider
-2. Rotate them on each request (round-robin)
+2. Keep using the same key until it hits a limit / auth failure (sticky)
 3. Automatically cool down a bad key (401 / 403 / 429 / quota / timeout-style errors) and **retry with the next key**
 
 ---
@@ -22,7 +22,7 @@ DSH’s Models page stores **one** API key per provider. If you have several key
 
 ```
 Chat request
-   → plugin picks a healthy key (round-robin)
+   → plugin reuses the current healthy key (sticky)
    → writes it into process.env[apiKeyEnv]
    → DSH credentials prefer env over .credentials.yaml
    → provider API call
@@ -30,7 +30,7 @@ Chat request
 On failure (auth / rate limit / …)
    → mark that key cooling
    → ask agent loop to retry
-   → next request picks another key
+   → next request sticks to the next healthy key
 ```
 
 **Important:** the pool’s `apiKeyEnv` must match the provider’s `apiKeyEnv` in your DSH config (for example `EASYTOKENS_CODEX_API_KEY`).

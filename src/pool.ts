@@ -211,26 +211,31 @@ export class KeyPoolManager {
     return pool.keys.some((k) => (pool.states.get(k)?.cooldownUntil || 0) <= now)
   }
 
+  /**
+   * Sticky-until-fail: keep using the current key while it is healthy.
+   * Advance `idx` only when that key is cooling (rate-limit / auth / …).
+   * Verify probes still work — markFailed cools the key so the next pick moves on.
+   */
   pickKey(provider: string): string | undefined {
     const pool = this.pools.get(provider)
     if (!pool || pool.keys.length === 0) return undefined
 
     const now = Date.now()
-    const live = pool.keys.filter((k) => (pool.states.get(k)?.cooldownUntil || 0) <= now)
-    if (live.length === 0) {
-      log(this.ctx, 'warn', `pool '${provider}': all keys cooling`)
-      return undefined
+    const isLive = (k: string) => (pool.states.get(k)?.cooldownUntil || 0) <= now
+
+    const n = pool.keys.length
+    const start = ((pool.idx % n) + n) % n
+    for (let i = 0; i < n; i++) {
+      const realIdx = (start + i) % n
+      const key = pool.keys[realIdx]!
+      if (!isLive(key)) continue
+      // Stick here until this key fails and enters cooldown.
+      pool.idx = realIdx
+      return key
     }
 
-    for (let i = 0; i < live.length; i++) {
-      const key = live[(pool.idx + i) % live.length]!
-      const realIdx = pool.keys.indexOf(key)
-      if (realIdx >= 0) {
-        pool.idx = (realIdx + 1) % pool.keys.length
-        return key
-      }
-    }
-    return live[0]
+    log(this.ctx, 'warn', `pool '${provider}': all keys cooling`)
+    return undefined
   }
 
   /** True when any request still has a bound key for this provider. */

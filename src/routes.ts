@@ -284,7 +284,7 @@ async function handleVerify(
     manager.markFailed(provider, key, String(status || 'TRANSPORT'))
   }
 
-  // Restore round-robin cursor; leave cooldown from probe as diagnostic signal.
+  // Restore sticky cursor; leave cooldown from probe as diagnostic signal.
   manager.pools.get(provider)!.idx = savedIdx
 
   sendJson(res, 200, {
